@@ -1,13 +1,9 @@
 mod app;
+mod preview;
 mod terminal;
+mod tree;
 
-use std::{
-    env,
-    ffi::OsString,
-    io,
-    path::{Path, PathBuf},
-    process::ExitCode,
-};
+use std::{env, ffi::OsString, path::PathBuf, process::ExitCode};
 
 use rust_i18n::t;
 
@@ -28,7 +24,7 @@ fn main() -> ExitCode {
 fn open_directory() -> Result<(), String> {
     let (language, path) = parse_args(env::args_os().skip(1))?;
     let locale = language.locale();
-    let entries = read_directory(&path).map_err(|error| {
+    let entries = tree::read_directory(&path, 0).map_err(|error| {
         t!(
             "error.read_directory",
             locale = locale,
@@ -38,8 +34,8 @@ fn open_directory() -> Result<(), String> {
         .into_owned()
     })?;
 
-    let mut app = App::new(language);
-    terminal::run(&entries, &mut app).map_err(|error| {
+    let mut app = App::new(language, path, entries);
+    terminal::run(&mut app).map_err(|error| {
         t!(
             "error.terminal",
             locale = app.language.locale(),
@@ -74,21 +70,6 @@ fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<(Language, Pat
         (Some(path), None) => Ok((language, PathBuf::from(path))),
         _ => Err(t!("cli.usage", locale = language.locale()).into_owned()),
     }
-}
-
-fn read_directory(path: &Path) -> io::Result<Vec<String>> {
-    let mut entries = path
-        .read_dir()?
-        .map(|entry| {
-            let entry = entry?;
-            let name = entry.file_name();
-            let suffix = if entry.file_type()?.is_dir() { "/" } else { "" };
-            Ok(format!("  {}{suffix}", name.to_string_lossy()))
-        })
-        .collect::<io::Result<Vec<_>>>()?;
-    entries.sort_unstable();
-    entries.insert(0, path.display().to_string());
-    Ok(entries)
 }
 
 #[cfg(test)]

@@ -1,4 +1,24 @@
+use std::{io, path::PathBuf};
+
 use crossterm::event::KeyCode;
+use ratatui::widgets::ListState;
+
+use crate::{
+    preview,
+    tree::{self, Entry},
+};
+
+pub(crate) enum Preview {
+    Empty,
+    File {
+        path: PathBuf,
+        result: Result<preview::Document, preview::Error>,
+    },
+    DirectoryError {
+        path: PathBuf,
+        cause: io::Error,
+    },
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Language {
@@ -17,14 +37,23 @@ impl Language {
 }
 
 pub(crate) struct App {
+    pub(crate) root: PathBuf,
+    pub(crate) entries: Vec<Entry>,
+    pub(crate) tree_selection: ListState,
+    pub(crate) preview: Preview,
     pub(crate) language: Language,
     pub(crate) tree_focused: bool,
     pub(crate) language_selection: Option<Language>,
 }
 
 impl App {
-    pub(crate) fn new(language: Language) -> Self {
+    pub(crate) fn new(language: Language, root: PathBuf, entries: Vec<Entry>) -> Self {
+        let selected = (!entries.is_empty()).then_some(0);
         Self {
+            root,
+            entries,
+            tree_selection: ListState::default().with_selected(selected),
+            preview: Preview::Empty,
             language,
             tree_focused: true,
             language_selection: None,
@@ -44,7 +73,54 @@ impl App {
             match key {
                 KeyCode::Tab => self.tree_focused = !self.tree_focused,
                 KeyCode::Char('o') => self.language_selection = Some(self.language),
+                KeyCode::Up if self.tree_focused => {
+                    if let Some(index) = self.tree_selection.selected() {
+                        self.tree_selection.select(Some(index.saturating_sub(1)));
+                    }
+                }
+                KeyCode::Down if self.tree_focused => {
+                    if let Some(index) = self.tree_selection.selected() {
+                        self.tree_selection
+                            .select(Some((index + 1).min(self.entries.len() - 1)));
+                    }
+                }
+                KeyCode::Enter if self.tree_focused => self.activate_selection(),
                 _ => {}
+            }
+        }
+    }
+
+    fn activate_selection(&mut self) {
+        let Some(index) = self.tree_selection.selected() else {
+            return;
+        };
+        let entry = &mut self.entries[index];
+        if !entry.kind.is_dir() {
+            self.preview = Preview::File {
+                path: entry.path.clone(),
+                result: preview::open(&entry.path),
+            };
+        } else if entry.expanded {
+            entry.expanded = false;
+            let depth = entry.depth;
+            let start = index + 1;
+            let descendants = self.entries[start..]
+                .iter()
+                .take_while(|entry| entry.depth > depth)
+                .count();
+            self.entries.drain(start..start + descendants);
+        } else {
+            match tree::read_directory(&entry.path, entry.depth + 1) {
+                Ok(children) => {
+                    entry.expanded = true;
+                    self.entries.splice(index + 1..index + 1, children);
+                }
+                Err(cause) => {
+                    self.preview = Preview::DirectoryError {
+                        path: entry.path.clone(),
+                        cause,
+                    };
+                }
             }
         }
     }
@@ -56,7 +132,7 @@ mod tests {
 
     #[test]
     fn options_change_language_and_preserve_panel_focus() {
-        let mut app = App::new(Language::English);
+        let mut app = App::new(Language::English, ".".into(), Vec::new());
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Char('o'));
         assert_eq!(app.language_selection, Some(Language::English));

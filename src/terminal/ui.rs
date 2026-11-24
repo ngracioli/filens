@@ -7,7 +7,10 @@ use ratatui::{
 };
 use rust_i18n::t;
 
-use crate::app::{App, Language};
+use crate::{
+    app::{App, Language, Preview},
+    preview,
+};
 
 const SURFACE: Color = Color::Rgb(21, 29, 43);
 const RAISED: Color = Color::Rgb(31, 43, 62);
@@ -17,9 +20,13 @@ const MUTED: Color = Color::Rgb(168, 185, 207);
 const ACCENT: Color = Color::Rgb(125, 224, 201);
 const DIRECTORY: Color = Color::Rgb(242, 193, 132);
 
-pub(super) fn draw(frame: &mut Frame<'_>, app: &App, entries: &[String]) {
+pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
     let locale = app.language.locale();
-    let footer_height = if frame.area().width < 56 { 2 } else { 1 };
+    let footer_height = match frame.area().width {
+        0..=39 => 3,
+        40..=79 => 2,
+        _ => 1,
+    };
     let [body, footer] = Layout::vertical([Constraint::Min(0), Constraint::Length(footer_height)])
         .areas(frame.area());
 
@@ -28,32 +35,72 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &App, entries: &[String]) {
         Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(body);
     let tree_title = t!("panel.tree", locale = locale);
     let preview_title = t!("panel.preview", locale = locale);
-    let tree_rows = entries.iter().map(|entry| {
-        let style = if entry.ends_with('/') {
-            Style::new().fg(DIRECTORY)
+    let tree_rows = app.entries.iter().map(|entry| {
+        let (marker, style) = if entry.kind.is_dir() {
+            let marker = if entry.expanded { "▾ " } else { "▸ " };
+            (marker, Style::new().fg(DIRECTORY))
         } else {
-            Style::new().fg(TEXT)
+            ("  ", Style::new().fg(TEXT))
         };
-        Line::styled(entry.as_str(), style)
+        let indent = "  ".repeat(entry.depth);
+        let name = display_path(&entry.name().to_string_lossy());
+        Line::styled(format!("{indent}{marker}{name}"), style)
     });
-    frame.render_widget(
-        List::new(tree_rows).block(panel(
-            &tree_title,
-            app.tree_focused && !options_open,
-            RAISED,
-        )),
-        tree,
-    );
-    frame.render_widget(
-        Paragraph::new(t!("preview.empty", locale = locale))
-            .style(Style::new().fg(MUTED))
-            .wrap(Wrap { trim: true })
+    let tree_focused = app.tree_focused && !options_open;
+    let selection_style = if tree_focused {
+        active_style()
+    } else {
+        Style::new().bg(BORDER)
+    };
+    frame.render_stateful_widget(
+        List::new(tree_rows)
             .block(
-                panel(&preview_title, !app.tree_focused && !options_open, SURFACE)
-                    .padding(Padding::new(1, 1, 1, 0)),
-            ),
-        preview,
+                panel(&tree_title, tree_focused, RAISED)
+                    .title_bottom(display_path(&app.root.to_string_lossy())),
+            )
+            .highlight_style(selection_style),
+        tree,
+        &mut app.tree_selection,
     );
+    let preview_panel = panel(&preview_title, !app.tree_focused && !options_open, SURFACE)
+        .padding(Padding::new(1, 1, 1, 0));
+    let inner = preview_panel.inner(preview);
+    frame.render_widget(preview_panel, preview);
+    match &app.preview {
+        Preview::Empty => draw_message(frame, inner, &t!("preview.empty", locale = locale)),
+        Preview::DirectoryError { path, cause } => draw_message(
+            frame,
+            inner,
+            &t!(
+                "error.read_directory",
+                locale = locale,
+                path = display_path(&path.to_string_lossy()),
+                cause = cause
+            ),
+        ),
+        Preview::File { path, result } => {
+            let [path_row, content] =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
+            frame.render_widget(
+                Paragraph::new(display_path(&path.to_string_lossy())).style(Style::new().fg(MUTED)),
+                path_row,
+            );
+            match result {
+                Ok(document) => draw_document(frame, content, document, locale),
+                Err(error) => {
+                    let message = match error {
+                        preview::Error::Read(cause) => {
+                            t!("preview.read_error", locale = locale, cause = cause)
+                        }
+                        preview::Error::NotRegular => t!("preview.not_regular", locale = locale),
+                        preview::Error::Binary => t!("preview.binary", locale = locale),
+                        preview::Error::Encoding => t!("preview.encoding", locale = locale),
+                    };
+                    draw_message(frame, content, &message);
+                }
+            }
+        }
+    }
 
     let help = if let Some(selected) = app.language_selection {
         let rows = [
@@ -98,6 +145,56 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &App, entries: &[String]) {
     );
 }
 
+fn draw_message(frame: &mut Frame<'_>, area: Rect, message: &str) {
+    frame.render_widget(
+        Paragraph::new(message)
+            .style(Style::new().fg(MUTED))
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn draw_document(frame: &mut Frame<'_>, area: Rect, document: &preview::Document, locale: &str) {
+    let mut rows = Vec::new();
+    if document.truncated {
+        rows.push(Line::styled(
+            t!("preview.truncated", locale = locale),
+            Style::new().fg(MUTED),
+        ));
+    }
+    let visible_lines = usize::from(area.height).saturating_sub(rows.len());
+    let number_width = visible_lines.to_string().len();
+    rows.extend(
+        document
+            .text
+            .lines()
+            .take(visible_lines)
+            .enumerate()
+            .map(|(index, text)| {
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:>number_width$} │ ", index + 1),
+                        Style::new().fg(MUTED),
+                    ),
+                    Span::raw(display_path(&text.replace('\t', "    "))),
+                ])
+            }),
+    );
+    frame.render_widget(Paragraph::new(rows).style(Style::new().fg(TEXT)), area);
+}
+
+fn display_path(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if character.is_control() {
+                '�'
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
 fn option_row(label: &str, selected: bool) -> Line<'static> {
     if selected {
         Line::styled(format!("> {label} "), active_style())
@@ -131,14 +228,115 @@ mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
 
+    fn app_with_entry(language: Language, name: &str) -> App {
+        let entry = crate::tree::Entry {
+            path: name.into(),
+            kind: std::fs::metadata("Cargo.toml").unwrap().file_type(),
+            depth: 0,
+            expanded: false,
+        };
+        App::new(language, ".".into(), vec![entry])
+    }
+
+    #[test]
+    fn keyboard_expands_previews_and_hides_descendants() {
+        use crossterm::event::KeyCode;
+
+        let root = std::env::temp_dir().join(format!("filens-tree-{}", std::process::id()));
+        let folder = root.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("child.txt");
+        std::fs::write(&file, "").unwrap();
+        let entries = crate::tree::read_directory(&root, 0).unwrap();
+        let mut app = App::new(Language::English, root.clone(), entries);
+        let mut terminal = Terminal::new(TestBackend::new(120, 12)).unwrap();
+
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Down);
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Enter);
+        assert!(matches!(app.preview, Preview::Empty));
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::Enter);
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        assert!(matches!(&app.preview, Preview::File { path, result: Ok(_) } if path == &file));
+        assert!(
+            terminal
+                .backend()
+                .to_string()
+                .contains(&file.to_string_lossy().into_owned())
+        );
+
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Enter);
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let rendered = terminal.backend().to_string();
+        assert_eq!(rendered.matches("child.txt").count(), 1);
+        assert_eq!(app.entries.len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn previews_numbered_text_and_recovers_from_file_errors() {
+        use crossterm::event::KeyCode;
+
+        let root = std::env::temp_dir().join(format!("filens-preview-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let utf16 = [0xfe, 0xff]
+            .into_iter()
+            .chain("ação\n\nfim".encode_utf16().flat_map(u16::to_be_bytes))
+            .collect::<Vec<_>>();
+        let files: [(&str, &[u8]); 5] = [
+            ("a-binary", b"example\0"),
+            ("b-encoding", b"caf\xe9"),
+            ("c-removed", b"example"),
+            ("d-utf16", &utf16),
+            ("e-utf8", " ação\r\n\r\nfim\r\n".as_bytes()),
+        ];
+        for (name, bytes) in files {
+            std::fs::write(root.join(name), bytes).unwrap();
+        }
+        let entries = crate::tree::read_directory(&root, 0).unwrap();
+        std::fs::remove_file(root.join("c-removed")).unwrap();
+        let mut app = App::new(Language::BrazilianPortuguese, root.clone(), entries);
+        let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
+
+        for (index, expected) in [
+            "Arquivo binário.",
+            "Codificação de texto não reconhecida.",
+            "Não foi possível ler o arquivo:",
+            "1 │ ação",
+            "1 │  ação",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            app.handle_key(KeyCode::Enter);
+            terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+            let rendered = terminal.backend().to_string();
+            assert!(rendered.contains(expected), "{rendered}");
+            assert!(app.tree_focused);
+            if index >= 3 {
+                assert!(rendered.contains("2 │"));
+                assert!(rendered.contains("3 │ fim"));
+                assert!(!rendered.contains("4 │"));
+                let (name, original) = files[index];
+                assert!(rendered.contains(root.join(name).to_str().unwrap()));
+                assert_eq!(std::fs::read(root.join(name)).unwrap(), original);
+            }
+            app.handle_key(KeyCode::Down);
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn options_overlay_keeps_the_browser_visible() {
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        let mut app = App::new(Language::English);
+        let mut app = app_with_entry(Language::English, "example.txt");
         app.handle_key(crossterm::event::KeyCode::Char('o'));
-        terminal
-            .draw(|frame| draw(frame, &app, &["example.txt".into()]))
-            .unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let buffer = terminal.backend().buffer();
         assert_eq!(buffer[(23, 7)].symbol(), "┌");
@@ -165,10 +363,8 @@ mod tests {
             ),
         ] {
             let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
-            let mut app = App::new(language);
-            terminal
-                .draw(|frame| draw(frame, &app, &["ação.txt".into()]))
-                .unwrap();
+            let mut app = app_with_entry(language, "ação.txt");
+            terminal.draw(|frame| draw(frame, &mut app)).unwrap();
             let rendered = terminal.backend().to_string();
             assert_eq!(terminal.backend().buffer()[(2, 0)].bg, ACCENT);
             assert!(!rendered.contains("Focus:") && !rendered.contains("Foco:"));
@@ -177,7 +373,7 @@ mod tests {
             assert!(rendered.contains("tab "));
 
             app.handle_key(crossterm::event::KeyCode::Char('o'));
-            terminal.draw(|frame| draw(frame, &app, &[])).unwrap();
+            terminal.draw(|frame| draw(frame, &mut app)).unwrap();
             let rendered = terminal.backend().to_string();
             assert!(rendered.contains(options));
             assert!(rendered.contains("Esc"));

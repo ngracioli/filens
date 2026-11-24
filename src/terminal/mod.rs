@@ -7,20 +7,15 @@ use ratatui::DefaultTerminal;
 
 use crate::app::App;
 
-pub(crate) fn run(entries: &[String], app: &mut App) -> io::Result<()> {
-    let result =
-        ratatui::try_init().and_then(|mut terminal| run_session(&mut terminal, entries, app));
+pub(crate) fn run(app: &mut App) -> io::Result<()> {
+    let result = ratatui::try_init().and_then(|mut terminal| run_session(&mut terminal, app));
     let restored = ratatui::try_restore();
     result.and(restored)
 }
 
-fn run_session(
-    terminal: &mut DefaultTerminal,
-    entries: &[String],
-    app: &mut App,
-) -> io::Result<()> {
+fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
-        terminal.draw(|frame| ui::draw(frame, app, entries))?;
+        terminal.draw(|frame| ui::draw(frame, app))?;
 
         if let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
