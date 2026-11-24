@@ -1,12 +1,19 @@
-use std::{env, io, path::PathBuf, process::ExitCode};
+mod app;
+mod terminal;
 
-use crossterm::event::{self, KeyCode, KeyEventKind};
-use ratatui::{
-    DefaultTerminal,
-    layout::{Constraint, Layout},
-    style::Color,
-    widgets::{Block, List, Paragraph},
+use std::{
+    env,
+    ffi::OsString,
+    io,
+    path::{Path, PathBuf},
+    process::ExitCode,
 };
+
+use rust_i18n::t;
+
+use app::{App, Language};
+
+rust_i18n::i18n!("locales", fallback = "en");
 
 fn main() -> ExitCode {
     match open_directory() {
@@ -18,18 +25,58 @@ fn main() -> ExitCode {
     }
 }
 
-fn open_directory() -> io::Result<()> {
-    let mut args = env::args_os().skip(1);
-    let path = match (args.next(), args.next()) {
-        (Some(path), None) => PathBuf::from(path),
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Uso: filens <diretório>",
-            ));
-        }
-    };
+fn open_directory() -> Result<(), String> {
+    let (language, path) = parse_args(env::args_os().skip(1))?;
+    let locale = language.locale();
+    let entries = read_directory(&path).map_err(|error| {
+        t!(
+            "error.read_directory",
+            locale = locale,
+            path = path.display(),
+            cause = error
+        )
+        .into_owned()
+    })?;
 
+    let mut app = App::new(language);
+    terminal::run(&entries, &mut app).map_err(|error| {
+        t!(
+            "error.terminal",
+            locale = app.language.locale(),
+            cause = error
+        )
+        .into_owned()
+    })
+}
+
+fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<(Language, PathBuf), String> {
+    let mut args = args.into_iter().peekable();
+    let mut language = Language::default();
+
+    if args.next_if(|arg| arg == "--lang").is_some() {
+        language = match args.next() {
+            Some(value) if value == "en" => Language::English,
+            Some(value) if value == "pt-BR" => Language::BrazilianPortuguese,
+            Some(value) => {
+                return Err(t!(
+                    "error.unsupported_language",
+                    locale = "en",
+                    language = value.to_string_lossy()
+                )
+                .into_owned());
+            }
+            None => return Err(t!("cli.usage", locale = "en").into_owned()),
+        };
+    }
+
+    args.next_if(|arg| arg == "--");
+    match (args.next(), args.next()) {
+        (Some(path), None) => Ok((language, PathBuf::from(path))),
+        _ => Err(t!("cli.usage", locale = language.locale()).into_owned()),
+    }
+}
+
+fn read_directory(path: &Path) -> io::Result<Vec<String>> {
     let mut entries = path
         .read_dir()?
         .map(|entry| {
@@ -41,50 +88,32 @@ fn open_directory() -> io::Result<()> {
         .collect::<io::Result<Vec<_>>>()?;
     entries.sort_unstable();
     entries.insert(0, path.display().to_string());
-
-    let result = ratatui::try_init().and_then(|mut terminal| run(&mut terminal, &entries));
-    let restored = ratatui::try_restore();
-    result.and(restored)
+    Ok(entries)
 }
 
-fn run(terminal: &mut DefaultTerminal, entries: &[String]) -> io::Result<()> {
-    let mut tree_focused = true;
-    loop {
-        terminal.draw(|frame| {
-            let [body, footer] =
-                Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
-            let [tree, preview] =
-                Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
-                    .areas(body);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-            let tree_border = panel("Árvore", tree_focused);
-            let preview_border = panel("Prévia", !tree_focused);
-            frame.render_widget(
-                List::new(entries.iter().map(String::as_str)).block(tree_border),
-                tree,
+    #[test]
+    fn parses_requested_language_and_preserves_path() {
+        for (args, expected) in [
+            (vec!["ação"], Language::English),
+            (vec!["--lang", "en", "ação"], Language::English),
+            (
+                vec!["--lang", "pt-BR", "ação"],
+                Language::BrazilianPortuguese,
+            ),
+        ] {
+            assert_eq!(
+                parse_args(args.into_iter().map(OsString::from)),
+                Ok((expected, PathBuf::from("ação"))),
             );
-            frame.render_widget(preview_border, preview);
-
-            let focus = if tree_focused { "Árvore" } else { "Prévia" };
-            frame.render_widget(
-                Paragraph::new(format!("Foco: {focus} | Tab alterna | q sai")),
-                footer,
-            );
-        })?;
-
-        if let event::Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            match key.code {
-                KeyCode::Tab => tree_focused = !tree_focused,
-                KeyCode::Char('q') => return Ok(()),
-                _ => {}
-            }
         }
+        assert!(
+            parse_args(["--lang", "fr", "."].map(OsString::from))
+                .unwrap_err()
+                .contains("Unsupported language: fr")
+        );
     }
-}
-
-fn panel(title: &str, focused: bool) -> Block<'_> {
-    let border_color = if focused { Color::Cyan } else { Color::Reset };
-    Block::bordered().title(title).border_style(border_color)
 }
