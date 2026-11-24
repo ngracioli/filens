@@ -11,6 +11,7 @@ Filens is a terminal application for browsing directories and previewing files.
 ## Project conventions
 
 - Keep changes focused, follow nearby conventions, and use English identifiers.
+- Read and apply the relevant sections of [Rust practices](docs/rust-practices.md) before writing or reviewing Rust code.
 
 ## Internationalization
 
