@@ -19,7 +19,7 @@ impl Language {
 pub(crate) struct App {
     pub(crate) language: Language,
     pub(crate) tree_focused: bool,
-    pub(crate) options_open: bool,
+    pub(crate) language_selection: Option<Language>,
 }
 
 impl App {
@@ -27,22 +27,23 @@ impl App {
         Self {
             language,
             tree_focused: true,
-            options_open: false,
+            language_selection: None,
         }
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyCode) {
-        if self.options_open {
+        if let Some(selected) = &mut self.language_selection {
             match key {
-                KeyCode::Esc => self.options_open = false,
-                KeyCode::Char('1') => self.language = Language::English,
-                KeyCode::Char('2') => self.language = Language::BrazilianPortuguese,
+                KeyCode::Esc => self.language_selection = None,
+                KeyCode::Up => *selected = Language::English,
+                KeyCode::Down => *selected = Language::BrazilianPortuguese,
+                KeyCode::Enter => self.language = *selected,
                 _ => {}
             }
         } else {
             match key {
                 KeyCode::Tab => self.tree_focused = !self.tree_focused,
-                KeyCode::Char('o') => self.options_open = true,
+                KeyCode::Char('o') => self.language_selection = Some(self.language),
                 _ => {}
             }
         }
@@ -58,12 +59,18 @@ mod tests {
         let mut app = App::new(Language::English);
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Char('o'));
-        assert!(app.options_open);
-        app.handle_key(KeyCode::Char('2'));
+        assert_eq!(app.language_selection, Some(Language::English));
+        app.handle_key(KeyCode::Down);
+        assert_eq!(app.language_selection, Some(Language::BrazilianPortuguese));
+        assert_eq!(app.language, Language::English);
+        app.handle_key(KeyCode::Enter);
         assert_eq!(app.language, Language::BrazilianPortuguese);
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.language_selection, Some(Language::English));
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Esc);
-        assert!(!app.options_open);
+        assert_eq!(app.language_selection, None);
+        assert_eq!(app.language, Language::BrazilianPortuguese);
         assert!(!app.tree_focused);
     }
 }

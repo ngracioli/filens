@@ -8,7 +8,7 @@ tags: [architecture, i18n]
 
 ## Scope and Language Selection
 
-Support English (`en`) and Brazilian Portuguese (`pt-BR`). Use English when the user omits the language, regardless of the operating system settings. Select Brazilian Portuguese for a launch with `filens --lang pt-BR .`. Accept `--lang en` explicitly. Press `o` to open Options and choose either language for the current session. Apply the selection immediately. Press `Esc` to close Options and restore focus to the previous panel. A new launch follows the command-line option or the English default. Report unsupported language values as CLI usage errors in English before entering the alternate screen.
+Support English (`en`) and Brazilian Portuguese (`pt-BR`). Use English when the user omits the language, regardless of the operating system settings. Select Brazilian Portuguese for a launch with `filens --lang pt-BR .`. Accept `--lang en` explicitly. Press `o` to open Options. Use `↑` and `↓` to choose a language and `Enter` to apply it immediately for the current session. Press `Esc` to close Options and restore focus to the previous panel. A new launch follows the command-line option or the English default. Report unsupported language values as CLI usage errors in English before entering the alternate screen.
 
 ## Implementation
 
@@ -16,7 +16,7 @@ Use `rust-i18n` with `locales/en.toml` and `locales/pt-BR.toml` at the package r
 
 - Initialize the catalogs with English fallback using `rust_i18n::i18n!("locales", fallback = "en")`.
 - Resolve the starting language when parsing arguments and store the active language in application state. Update that state when the user selects a language in Options. Pass it explicitly to text lookups with `t!(..., locale = ...)` so tests can render either language independently.
-- Use stable English keys such as `panel.tree`, `footer.focus`, and `error.read_file`. Keep complete sentences in the catalogs and interpolate named values such as the path and error cause.
+- Use stable English keys such as `panel.tree`, `footer.browser`, and `error.read_file`. Keep complete sentences in the catalogs and interpolate named values such as the path and error cause.
 - Translate application-owned text at the terminal or CLI boundary. Keep errors and paths in their original types until display. System-provided error details can follow the system language.
 - Use English when a Portuguese message is missing. Keep the same keys and placeholder names in both catalogs for releases.
 
