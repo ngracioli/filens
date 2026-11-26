@@ -1,4 +1,4 @@
-use super::{Theme, rgb};
+use super::{Theme, rgb, syntax};
 
 // https://github.com/raunofreiberg/vesper/blob/main/themes/Vesper-dark-color-theme.json
 pub(super) const PALETTE: Theme = Theme {
@@ -10,4 +10,7 @@ pub(super) const PALETTE: Theme = Theme {
     muted: rgb(0xa0a0a0),
     accent: rgb(0xffc799),
     directory: rgb(0x99ffe4),
+    syntax: syntax([
+        0x575757, 0x99ffe4, 0xa0a0a0, 0xffc799, 0xffc799, 0xffc799, 0xffc799, 0xffc799,
+    ]),
 };

@@ -25,6 +25,7 @@ pub(crate) struct Theme {
     pub(crate) muted: Color,
     pub(crate) accent: Color,
     pub(crate) directory: Color,
+    pub(crate) syntax: [Color; 8],
 }
 
 pub(crate) const THEMES: &[Theme] = &[
@@ -48,4 +49,28 @@ pub(crate) const THEMES: &[Theme] = &[
 const fn rgb(hex: u32) -> Color {
     let [_, red, green, blue] = hex.to_be_bytes();
     Color::Rgb(red, green, blue)
+}
+
+// Em ordem: comentário, string, palavra-chave, constante, função, tipo, tag e título.
+const fn syntax(colors: [u32; 8]) -> [Color; 8] {
+    let [
+        comment,
+        string,
+        keyword,
+        constant,
+        function,
+        kind,
+        tag,
+        heading,
+    ] = colors;
+    [
+        rgb(comment),
+        rgb(string),
+        rgb(keyword),
+        rgb(constant),
+        rgb(function),
+        rgb(kind),
+        rgb(tag),
+        rgb(heading),
+    ]
 }

@@ -1,4 +1,4 @@
-use super::{Theme, rgb};
+use super::{Theme, rgb, syntax};
 
 pub(super) const PALETTE: Theme = Theme {
     name: "Filens Mono",
@@ -9,4 +9,7 @@ pub(super) const PALETTE: Theme = Theme {
     muted: rgb(0xa0a0a0),
     accent: rgb(0x939393),
     directory: rgb(0xb8b8b8),
+    syntax: syntax([
+        0xa0a0a0, 0xd8d8d8, 0xefefef, 0xb8b8b8, 0xe0e0e0, 0xb8b8b8, 0xe0e0e0, 0xefefef,
+    ]),
 };

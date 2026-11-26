@@ -1,3 +1,7 @@
+mod highlight;
+
+pub(crate) use highlight::Token;
+
 use std::{
     fs::{self, File},
     io::{self, Read},
@@ -9,6 +13,7 @@ const MAX_BYTES: usize = 1024 * 1024;
 pub(crate) struct Document {
     pub(crate) text: String,
     pub(crate) truncated: bool,
+    pub(crate) highlights: Option<highlight::Highlights>,
 }
 
 pub(crate) enum Error {
@@ -38,7 +43,12 @@ pub(crate) fn open(path: &Path) -> Result<Document, Error> {
     let truncated = bytes.len() > MAX_BYTES;
     bytes.truncate(MAX_BYTES);
     let text = decode(&bytes, truncated)?;
-    Ok(Document { text, truncated })
+    let highlights = highlight::highlight(path, &text);
+    Ok(Document {
+        text,
+        truncated,
+        highlights,
+    })
 }
 
 fn decode(bytes: &[u8], truncated: bool) -> Result<String, Error> {

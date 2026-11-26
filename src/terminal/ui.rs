@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Margin, Position, Rect},
@@ -350,30 +352,54 @@ fn draw_document(
         .enumerate()
         .skip(app.preview_offset)
         .take(visible_lines);
-    let lines = lines.map(|(index, text)| (index, expand_tabs(text)));
+    let lines = lines.map(|(index, text)| {
+        let tokens = document
+            .highlights
+            .as_ref()
+            .map_or(&[][..], |lines| &lines[index]);
+        let (text, offsets) = expand_tabs(text);
+        // As expansões mudam os bytes visíveis, mas os tokens apontam para a linha original.
+        let colors: Vec<_> = tokens
+            .iter()
+            .map(|(range, token)| {
+                let project = |source| {
+                    let index = offsets.partition_point(|(end, _)| *end <= source);
+                    let (original, expanded) = index.checked_sub(1).map_or((0, 0), |i| offsets[i]);
+                    expanded + (source - original)
+                };
+                (project(range.start)..project(range.end), *token)
+            })
+            .collect();
+        (index, text, colors)
+    });
 
     let mut last_column = 0;
     if !app.preview_wrap {
         let expanded: Vec<_> = lines.collect();
         let max_width = expanded
             .iter()
-            .map(|(_, text)| Span::raw(text).width())
+            .map(|(_, text, _)| Span::raw(text).width())
             .max()
             .unwrap_or(0);
         last_column = max_width.saturating_sub(width);
-        for (index, text) in expanded {
+        for (index, text, colors) in expanded {
             source_rows.push((index, 0));
             rows.push(numbered_row(
                 theme,
                 Some(index + 1),
                 number_width,
-                clip_columns(&text, app.preview_column, width),
+                clip_columns(
+                    &text,
+                    app.preview_column,
+                    width,
+                    syntax_style(theme, &colors),
+                ),
             ));
         }
     } else {
-        for (index, text) in lines {
+        for (index, text, colors) in lines {
             let remaining = visible_lines - source_rows.len();
-            for (part, text) in wrapped_rows(&text, width, remaining)
+            for (part, text) in wrapped_rows(&text, width, remaining, syntax_style(theme, &colors))
                 .into_iter()
                 .enumerate()
             {
@@ -406,16 +432,49 @@ fn draw_document(
     }
 }
 
-fn wrapped_rows(text: &str, width: usize, limit: usize) -> Vec<String> {
+fn syntax_style<'a>(
+    theme: &'a Theme,
+    colors: &'a [(Range<usize>, preview::Token)],
+) -> impl Fn(usize) -> Style + 'a {
+    |offset| {
+        let index = colors.partition_point(|(range, _)| range.end <= offset);
+        colors
+            .get(index)
+            .filter(|(range, _)| range.contains(&offset))
+            .map_or_else(Style::new, |(_, token)| {
+                Style::new().fg(theme.syntax[*token as usize])
+            })
+    }
+}
+
+fn push_span(spans: &mut Vec<Span<'static>>, symbol: &str, style: Style) {
+    if let Some(last) = spans.last_mut()
+        && last.style == style
+    {
+        last.content.to_mut().push_str(symbol);
+    } else {
+        spans.push(Span::styled(symbol.to_owned(), style));
+    }
+}
+
+fn wrapped_rows(
+    text: &str,
+    width: usize,
+    limit: usize,
+    style: impl Fn(usize) -> Style,
+) -> Vec<Vec<Span<'static>>> {
     let mut rows = Vec::new();
-    let mut part = String::new();
+    let mut part = Vec::new();
     let mut used = 0;
+    let mut offset = 0;
     for chunk in text.split_inclusive(char::is_whitespace) {
         let word_width = Span::raw(chunk.trim_end_matches(char::is_whitespace)).width();
         let chunk = Span::raw(chunk);
         for (position, grapheme) in chunk.styled_graphemes(Style::default()).enumerate() {
             let symbol = grapheme.symbol;
             let size = Span::raw(symbol).width();
+            let style = style(offset);
+            offset += symbol.len();
             if size > width {
                 continue;
             }
@@ -427,7 +486,7 @@ fn wrapped_rows(text: &str, width: usize, limit: usize) -> Vec<String> {
                     return rows;
                 }
             }
-            part.push_str(symbol);
+            push_span(&mut part, symbol, style);
             used += size;
         }
     }
@@ -456,7 +515,7 @@ pub(super) fn selected_preview_text(
         .take(last.row.0 + 1)
         .skip(first.row.0)
     {
-        let text = expand_tabs(text);
+        let (text, _) = expand_tabs(text);
         let width = usize::from(width);
         let parts = if app.preview_wrap {
             let limit = if line == last.row.0 {
@@ -464,11 +523,13 @@ pub(super) fn selected_preview_text(
             } else {
                 usize::MAX
             };
-            wrapped_rows(&text, width, limit)
+            wrapped_rows(&text, width, limit, |_| Style::new())
         } else {
-            vec![clip_columns(&text, app.preview_column, width)]
+            vec![clip_columns(&text, app.preview_column, width, |_| {
+                Style::new()
+            })]
         };
-        for (part, text) in parts.into_iter().enumerate() {
+        for (part, spans) in parts.into_iter().enumerate() {
             let Some((start, end)) =
                 super::selection_columns((line, part), width as u16, first, last)
             else {
@@ -476,7 +537,10 @@ pub(super) fn selected_preview_text(
             };
             let mut column = 0;
             let mut fragment = String::new();
-            for grapheme in Span::raw(text.as_str()).styled_graphemes(Style::default()) {
+            for grapheme in spans
+                .iter()
+                .flat_map(|span| span.styled_graphemes(Style::default()))
+            {
                 let next = column + Span::raw(grapheme.symbol).width();
                 if column >= usize::from(end) {
                     break;
@@ -493,43 +557,70 @@ pub(super) fn selected_preview_text(
     selected.join("\n")
 }
 
-fn numbered_row(theme: &Theme, number: Option<usize>, width: usize, text: String) -> Line<'static> {
+fn numbered_row(
+    theme: &Theme,
+    number: Option<usize>,
+    width: usize,
+    mut spans: Vec<Span<'static>>,
+) -> Line<'static> {
     let number = number.map(|value| value.to_string()).unwrap_or_default();
-    Line::from(vec![
+    spans.insert(
+        0,
         Span::styled(format!("{number:>width$} │ "), Style::new().fg(theme.muted)),
-        Span::raw(text),
-    ])
+    );
+    Line::from(spans)
 }
 
-fn expand_tabs(text: &str) -> String {
+fn expand_tabs(text: &str) -> (String, Vec<(usize, usize)>) {
     let mut expanded = String::new();
+    let mut offsets = Vec::new();
+    let mut source = 0;
     let mut column = 0;
     for (index, part) in text.split('\t').enumerate() {
         if index != 0 {
             let spaces = 4 - column % 4;
             expanded.extend(std::iter::repeat_n(' ', spaces));
             column += spaces;
+            source += 1;
+            offsets.push((source, expanded.len()));
         }
-        let part = display_path(part);
-        column += Span::raw(&part).width();
-        expanded.push_str(&part);
+        let start = expanded.len();
+        for character in part.chars() {
+            source += character.len_utf8();
+            if character.is_control() {
+                expanded.push('�');
+                offsets.push((source, expanded.len()));
+            } else {
+                expanded.push(character);
+            }
+        }
+        column += Span::raw(&expanded[start..]).width();
     }
-    expanded
+    (expanded, offsets)
 }
 
-fn clip_columns(text: &str, start: usize, width: usize) -> String {
+fn clip_columns(
+    text: &str,
+    start: usize,
+    width: usize,
+    style: impl Fn(usize) -> Style,
+) -> Vec<Span<'static>> {
     let mut column = 0;
-    let mut visible = String::new();
+    let mut visible = Vec::new();
+    let mut offset = 0;
     for grapheme in Span::raw(text).styled_graphemes(Style::default()) {
-        let size = Span::raw(grapheme.symbol).width();
+        let symbol = grapheme.symbol;
+        let size = Span::raw(symbol).width();
         let next = column + size;
         if next > start + width {
             break;
         }
+        let style = style(offset);
+        offset += symbol.len();
         if column >= start {
-            visible.push_str(grapheme.symbol);
+            push_span(&mut visible, symbol, style);
         } else if next > start {
-            visible.extend(std::iter::repeat_n(' ', next - start));
+            push_span(&mut visible, &" ".repeat(next - start), style);
         }
         column = next;
     }
@@ -706,6 +797,7 @@ mod tests {
             result: Ok(preview::Document {
                 text: "first\nsecond\nthird\nfourth\nlast".into(),
                 truncated: false,
+                highlights: None,
             }),
         };
         let mut terminal = Terminal::new(TestBackend::new(100, 9)).unwrap();
@@ -745,6 +837,7 @@ mod tests {
                     "x".repeat(100)
                 ),
                 truncated: false,
+                highlights: None,
             }),
         };
         let mut terminal = Terminal::new(TestBackend::new(100, 10)).unwrap();
@@ -780,6 +873,44 @@ mod tests {
     }
 
     #[test]
+    fn markdown_keeps_source_numbers_and_theme_colors_through_layout() {
+        let path = std::env::temp_dir().join(format!("filens-markdown-{}.md", std::process::id()));
+        std::fs::write(
+            &path,
+            "# Heading with enough words to wrap\nOrdinary text\n",
+        )
+        .unwrap();
+        let document = preview::open(&path).ok().unwrap();
+        std::fs::remove_file(path).unwrap();
+        let mut app = app_with_entry("en", "sample.md");
+        let mut terminal = Terminal::new(TestBackend::new(20, 8)).unwrap();
+
+        for theme in [&THEMES[0], &THEMES[5]] {
+            for wrap in [false, true] {
+                app.preview_wrap = wrap;
+                let mut rows = Vec::new();
+                terminal
+                    .draw(|frame| {
+                        rows = draw_document(frame, frame.area(), &document, &app, theme).rows;
+                    })
+                    .unwrap();
+                let buffer = terminal.backend().buffer();
+                let heading_color = theme.syntax[preview::Token::Heading as usize];
+                assert_ne!(heading_color, theme.text);
+                assert_eq!(buffer[(0, 0)].symbol(), "1");
+                assert_eq!(buffer[(4, 0)].fg, heading_color);
+                if wrap {
+                    assert_eq!(buffer[(0, 1)].symbol(), " ");
+                    assert_eq!(buffer[(4, 1)].fg, heading_color);
+                }
+                let second_line = rows.iter().position(|row| *row == (1, 0)).unwrap() as u16;
+                assert_eq!(buffer[(0, second_line)].symbol(), "2");
+                assert_eq!(buffer[(4, second_line)].fg, theme.text);
+            }
+        }
+    }
+
+    #[test]
     fn wrapping_moves_a_portuguese_word_to_the_next_row() {
         use crossterm::event::KeyCode;
 
@@ -789,6 +920,7 @@ mod tests {
             result: Ok(preview::Document {
                 text: format!("{} ação-livre", "a".repeat(64)),
                 truncated: false,
+                highlights: None,
             }),
         };
         app.handle_key(KeyCode::Char('w'));

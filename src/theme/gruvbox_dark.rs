@@ -1,4 +1,4 @@
-use super::{Theme, rgb};
+use super::{Theme, rgb, syntax};
 
 // https://github.com/morhetz/gruvbox/blob/master/colors/gruvbox.vim
 pub(super) const PALETTE: Theme = Theme {
@@ -10,4 +10,7 @@ pub(super) const PALETTE: Theme = Theme {
     muted: rgb(0xa89984),
     accent: rgb(0xfabd2f),
     directory: rgb(0x8ec07c),
+    syntax: syntax([
+        0x928374, 0xb8bb26, 0xfb4934, 0xd3869b, 0xb8bb26, 0xfabd2f, 0x8ec07c, 0xb8bb26,
+    ]),
 };

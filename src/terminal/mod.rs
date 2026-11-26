@@ -448,6 +448,7 @@ mod tests {
             result: Ok(crate::preview::Document {
                 text: "ação 🙂fim\nseguinte".into(),
                 truncated: false,
+                highlights: None,
             }),
         };
         app.preview_wrap = true;
