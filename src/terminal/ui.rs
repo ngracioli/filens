@@ -31,8 +31,11 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
         .areas(frame.area());
 
     let options_open = app.language_selection.is_some();
-    let [tree, preview] =
-        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(body);
+    let [tree, preview] = Layout::horizontal([
+        Constraint::Length((body.width / 4).max(12).min(body.width / 2)),
+        Constraint::Min(0),
+    ])
+    .areas(body);
     let tree_title = t!("panel.tree", locale = locale);
     let preview_title = t!("panel.preview", locale = locale);
     let tree_rows = app.entries.iter().map(|entry| {
