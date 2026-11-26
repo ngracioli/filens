@@ -2,6 +2,7 @@
 "panel.preview" = "Preview"
 "preview.empty" = "Select a file and press Enter."
 "panel.options" = "Options"
+"options.theme" = "Theme"
 "options.language" = "Language"
 "options.english" = "English"
 "options.portuguese" = "Brazilian Portuguese"

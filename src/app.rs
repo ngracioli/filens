@@ -5,6 +5,7 @@ use ratatui::widgets::ListState;
 
 use crate::{
     preview,
+    theme::THEMES,
     tree::{self, Entry},
 };
 
@@ -48,7 +49,8 @@ pub(crate) struct App {
     pub(crate) preview_wrap: bool,
     pub(crate) language: Language,
     pub(crate) tree_focused: bool,
-    pub(crate) language_selection: Option<Language>,
+    pub(crate) options_selection: Option<usize>,
+    pub(crate) theme: usize,
 }
 
 impl App {
@@ -66,17 +68,22 @@ impl App {
             preview_wrap: false,
             language,
             tree_focused: true,
-            language_selection: None,
+            options_selection: None,
+            theme: 0,
         }
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyCode) {
-        if let Some(selected) = &mut self.language_selection {
+        if let Some(selected) = &mut self.options_selection {
             match key {
-                KeyCode::Esc => self.language_selection = None,
-                KeyCode::Up => *selected = Language::English,
-                KeyCode::Down => *selected = Language::BrazilianPortuguese,
-                KeyCode::Enter => self.language = *selected,
+                KeyCode::Esc => self.options_selection = None,
+                KeyCode::Up => *selected = selected.saturating_sub(1),
+                KeyCode::Down => *selected = (*selected + 1).min(THEMES.len() + 1),
+                KeyCode::Enter => match *selected {
+                    0 => self.language = Language::English,
+                    1 => self.language = Language::BrazilianPortuguese,
+                    index => self.theme = index - 2,
+                },
                 _ => {}
             }
         } else {
@@ -92,7 +99,10 @@ impl App {
                         .saturating_add(1)
                         .min(self.preview_last_column.max(self.preview_column));
                 }
-                KeyCode::Char('o') => self.language_selection = Some(self.language),
+                KeyCode::Char('o') => {
+                    self.options_selection =
+                        Some(usize::from(self.language == Language::BrazilianPortuguese));
+                }
                 KeyCode::Up if self.tree_focused => {
                     if let Some(index) = self.tree_selection.selected() {
                         self.tree_selection.select(Some(index.saturating_sub(1)));
@@ -113,7 +123,7 @@ impl App {
     }
 
     pub(crate) fn scroll_preview(&mut self, delta: isize) {
-        if self.language_selection.is_none()
+        if self.options_selection.is_none()
             && matches!(self.preview, Preview::File { result: Ok(_), .. })
         {
             self.preview_offset = self
@@ -170,17 +180,17 @@ mod tests {
         let mut app = App::new(Language::English, ".".into(), Vec::new());
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Char('o'));
-        assert_eq!(app.language_selection, Some(Language::English));
+        assert_eq!(app.options_selection, Some(0));
         app.handle_key(KeyCode::Down);
-        assert_eq!(app.language_selection, Some(Language::BrazilianPortuguese));
+        assert_eq!(app.options_selection, Some(1));
         assert_eq!(app.language, Language::English);
         app.handle_key(KeyCode::Enter);
         assert_eq!(app.language, Language::BrazilianPortuguese);
         app.handle_key(KeyCode::Up);
-        assert_eq!(app.language_selection, Some(Language::English));
+        assert_eq!(app.options_selection, Some(0));
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Esc);
-        assert_eq!(app.language_selection, None);
+        assert_eq!(app.options_selection, None);
         assert_eq!(app.language, Language::BrazilianPortuguese);
         assert!(!app.tree_focused);
     }

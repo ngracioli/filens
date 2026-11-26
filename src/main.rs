@@ -1,6 +1,7 @@
 mod app;
 mod preview;
 mod terminal;
+mod theme;
 mod tree;
 
 use std::{env, ffi::OsString, path::PathBuf, process::ExitCode};

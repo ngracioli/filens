@@ -1,24 +1,20 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, List, Padding, Paragraph, Wrap},
+    widgets::{
+        Block, Clear, List, ListState, Padding, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Wrap,
+    },
 };
 use rust_i18n::t;
 
 use crate::{
-    app::{App, Language, Preview},
+    app::{App, Preview},
     preview,
+    theme::{THEMES, Theme},
 };
-
-const SURFACE: Color = Color::Rgb(21, 29, 43);
-const RAISED: Color = Color::Rgb(31, 43, 62);
-const BORDER: Color = Color::Rgb(88, 107, 133);
-const TEXT: Color = Color::Rgb(225, 234, 246);
-const MUTED: Color = Color::Rgb(168, 185, 207);
-const ACCENT: Color = Color::Rgb(125, 224, 201);
-const DIRECTORY: Color = Color::Rgb(242, 193, 132);
 
 #[derive(Default)]
 pub(super) struct PreviewViewport {
@@ -31,6 +27,11 @@ pub(super) fn draw(
     frame: &mut Frame<'_>,
     app: &mut App,
 ) -> (Rect, (Rect, u16), PreviewViewport, Rect) {
+    let theme_index = app
+        .options_selection
+        .and_then(|index| index.checked_sub(2))
+        .unwrap_or(app.theme);
+    let theme = &THEMES[theme_index];
     let locale = app.language.locale();
     let browser_help = browser_help(app);
     let count_help = t!("footer.copied", locale = locale, count = 999999);
@@ -38,7 +39,7 @@ pub(super) fn draw(
         0..=39 => 3,
         40..=79 => 2,
         width
-            if app.language_selection.is_none()
+            if app.options_selection.is_none()
                 && usize::from(width)
                     < Span::raw(format!("{browser_help} {count_help}")).width() =>
         {
@@ -49,7 +50,7 @@ pub(super) fn draw(
     let [body, footer] = Layout::vertical([Constraint::Min(0), Constraint::Length(footer_height)])
         .areas(frame.area());
 
-    let options_open = app.language_selection.is_some();
+    let options_open = app.options_selection.is_some();
     let [tree, preview] = Layout::horizontal([
         Constraint::Length((body.width / 4).max(12).min(body.width / 2)),
         Constraint::Min(0),
@@ -60,22 +61,22 @@ pub(super) fn draw(
     let tree_rows = app.entries.iter().map(|entry| {
         let (marker, style) = if entry.kind.is_dir() {
             let marker = if entry.expanded { "▾ " } else { "▸ " };
-            (marker, Style::new().fg(DIRECTORY))
+            (marker, Style::new().fg(theme.directory))
         } else {
-            ("  ", Style::new().fg(TEXT))
+            ("  ", Style::new().fg(theme.text))
         };
         let indent = "  ".repeat(entry.depth);
         let name = display_path(&entry.name().to_string_lossy());
         Line::styled(format!("{indent}{marker}{name}"), style)
     });
     let tree_focused = app.tree_focused && !options_open;
-    let tree_panel = panel(&tree_title, tree_focused, RAISED)
+    let tree_panel = panel(theme, &tree_title, tree_focused, theme.raised)
         .title_bottom(display_path(&app.root.to_string_lossy()));
     let tree_text = tree_panel.inner(tree);
     let selection_style = if tree_focused {
-        active_style()
+        active_style(theme)
     } else {
-        Style::new().bg(BORDER)
+        Style::new().bg(theme.border)
     };
     frame.render_stateful_widget(
         List::new(tree_rows)
@@ -84,16 +85,22 @@ pub(super) fn draw(
         tree,
         &mut app.tree_selection,
     );
-    let preview_panel = panel(&preview_title, !app.tree_focused && !options_open, SURFACE)
-        .padding(Padding::new(1, 1, 1, 0));
+    let preview_panel = panel(
+        theme,
+        &preview_title,
+        !app.tree_focused && !options_open,
+        theme.surface,
+    )
+    .padding(Padding::new(1, 1, 1, 0));
     let inner = preview_panel.inner(preview);
     frame.render_widget(preview_panel, preview);
     let mut preview_text = PreviewViewport::default();
     match &app.preview {
-        Preview::Empty => draw_message(frame, inner, &t!("preview.empty", locale = locale)),
+        Preview::Empty => draw_message(frame, inner, theme, &t!("preview.empty", locale = locale)),
         Preview::DirectoryError { path, cause } => draw_message(
             frame,
             inner,
+            theme,
             &t!(
                 "error.read_directory",
                 locale = locale,
@@ -105,7 +112,8 @@ pub(super) fn draw(
             let [path_row, content] =
                 Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
             frame.render_widget(
-                Paragraph::new(display_path(&path.to_string_lossy())).style(Style::new().fg(MUTED)),
+                Paragraph::new(display_path(&path.to_string_lossy()))
+                    .style(Style::new().fg(theme.muted)),
                 path_row,
             );
             match result {
@@ -118,15 +126,7 @@ pub(super) fn draw(
                     } else {
                         visible_lines.max(1)
                     });
-                    preview_text = draw_document(
-                        frame,
-                        content,
-                        document,
-                        locale,
-                        app.preview_offset,
-                        app.preview_wrap,
-                        app.preview_column,
-                    );
+                    preview_text = draw_document(frame, content, document, app, theme);
                     app.preview_last_column = preview_text.last_column;
                 }
                 Err(error) => {
@@ -138,29 +138,42 @@ pub(super) fn draw(
                         preview::Error::Binary => t!("preview.binary", locale = locale),
                         preview::Error::Encoding => t!("preview.encoding", locale = locale),
                     };
-                    draw_message(frame, content, &message);
+                    draw_message(frame, content, theme, &message);
                 }
             }
         }
     }
 
-    let help = if let Some(selected) = app.language_selection {
-        let rows = [
-            Line::styled(
-                t!("options.language", locale = locale),
-                Style::new().fg(MUTED),
+    let help = if let Some(selected) = app.options_selection {
+        let heading = |label| Line::styled(label, Style::new().fg(theme.muted));
+        let mut rows = vec![
+            heading(t!("options.language", locale = locale)),
+            option_row(
+                theme,
+                &t!("options.english", locale = locale),
+                selected == 0,
             ),
             option_row(
-                t!("options.english", locale = locale).as_ref(),
-                selected == Language::English,
+                theme,
+                &t!("options.portuguese", locale = locale),
+                selected == 1,
             ),
-            option_row(
-                t!("options.portuguese", locale = locale).as_ref(),
-                selected == Language::BrazilianPortuguese,
-            ),
+            heading(t!("options.theme", locale = locale)),
         ];
+        rows.extend(THEMES.iter().enumerate().map(|(index, item)| {
+            let label = if index == app.theme {
+                format!("{} ✓", item.name)
+            } else {
+                item.name.to_owned()
+            };
+            option_row(theme, &label, selected == index + 2)
+        }));
         let width = body.width.min(34);
-        let height = body.height.min(5);
+        let row_count = rows.len();
+        let height = body.height.saturating_sub(2).max(body.height.min(5));
+        let height = height.min(row_count as u16 + 2);
+        let mut state =
+            ListState::default().with_selected(Some(selected + if selected < 2 { 1 } else { 2 }));
         let modal = Rect::new(
             body.x + (body.width - width) / 2,
             body.y + (body.height - height).div_ceil(2),
@@ -168,18 +181,36 @@ pub(super) fn draw(
             height,
         );
         frame.render_widget(Clear, modal);
-        frame.render_widget(
+        frame.render_stateful_widget(
             List::new(rows).block(
-                panel(&t!("panel.options", locale = locale), true, RAISED)
-                    .padding(Padding::horizontal(1)),
+                panel(
+                    theme,
+                    &t!("panel.options", locale = locale),
+                    true,
+                    theme.raised,
+                )
+                .padding(Padding::horizontal(1)),
             ),
             modal,
+            &mut state,
         );
+        let visible_rows = usize::from(height.saturating_sub(2));
+        if row_count > visible_rows && visible_rows > 0 && width >= 4 {
+            let mut scrollbar = ScrollbarState::new(row_count - visible_rows + 1)
+                .viewport_content_length(visible_rows)
+                .position(state.offset());
+            frame.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                    .style(Style::new().fg(theme.accent)),
+                modal.inner(Margin::new(1, 1)),
+                &mut scrollbar,
+            );
+        }
         t!("footer.options", locale = locale)
     } else {
         browser_help
     };
-    draw_footer(frame, footer, &help);
+    draw_footer(frame, footer, theme, &help);
     let tree_rows = tree_text.height.min(
         app.entries
             .len()
@@ -196,15 +227,19 @@ pub(super) fn draw(
 }
 
 pub(super) fn draw_copy_footer(frame: &mut Frame<'_>, area: Rect, app: &App, count: usize) {
+    let theme = &THEMES[app.theme];
     let locale = app.language.locale();
     let help = browser_help(app);
     let copied = t!("footer.copied", locale = locale, count = count);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::raw(format!("{help} ")),
-            Span::styled(copied, Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                copied,
+                Style::new().fg(theme.accent).add_modifier(Modifier::BOLD),
+            ),
         ]))
-        .style(Style::new().fg(TEXT).bg(RAISED))
+        .style(Style::new().fg(theme.text).bg(theme.raised))
         .wrap(Wrap { trim: true }),
         area,
     );
@@ -224,19 +259,19 @@ fn browser_help(app: &App) -> std::borrow::Cow<'static, str> {
     format!("{wrap} | {help}").into()
 }
 
-fn draw_footer(frame: &mut Frame<'_>, area: Rect, help: &str) {
+fn draw_footer(frame: &mut Frame<'_>, area: Rect, theme: &Theme, help: &str) {
     frame.render_widget(
         Paragraph::new(help)
-            .style(Style::new().fg(TEXT).bg(RAISED))
+            .style(Style::new().fg(theme.text).bg(theme.raised))
             .wrap(Wrap { trim: true }),
         area,
     );
 }
 
-fn draw_message(frame: &mut Frame<'_>, area: Rect, message: &str) {
+fn draw_message(frame: &mut Frame<'_>, area: Rect, theme: &Theme, message: &str) {
     frame.render_widget(
         Paragraph::new(message)
-            .style(Style::new().fg(MUTED))
+            .style(Style::new().fg(theme.muted))
             .wrap(Wrap { trim: true }),
         area,
     );
@@ -246,16 +281,15 @@ fn draw_document(
     frame: &mut Frame<'_>,
     area: Rect,
     document: &preview::Document,
-    locale: &str,
-    offset: usize,
-    wrap: bool,
-    column: usize,
+    app: &App,
+    theme: &Theme,
 ) -> PreviewViewport {
+    let locale = app.language.locale();
     let mut rows = Vec::new();
     if document.truncated {
         rows.push(Line::styled(
             t!("preview.truncated", locale = locale),
-            Style::new().fg(MUTED),
+            Style::new().fg(theme.muted),
         ));
     }
     let visible_lines = usize::from(area.height).saturating_sub(rows.len());
@@ -268,12 +302,12 @@ fn draw_document(
         .text
         .lines()
         .enumerate()
-        .skip(offset)
+        .skip(app.preview_offset)
         .take(visible_lines);
     let lines = lines.map(|(index, text)| (index, expand_tabs(text)));
 
     let mut last_column = 0;
-    if !wrap {
+    if !app.preview_wrap {
         let expanded: Vec<_> = lines.collect();
         let max_width = expanded
             .iter()
@@ -284,9 +318,10 @@ fn draw_document(
         for (index, text) in expanded {
             source_rows.push((index, 0));
             rows.push(numbered_row(
+                theme,
                 Some(index + 1),
                 number_width,
-                clip_columns(&text, column, width),
+                clip_columns(&text, app.preview_column, width),
             ));
         }
     } else {
@@ -298,6 +333,7 @@ fn draw_document(
             {
                 source_rows.push((index, part));
                 rows.push(numbered_row(
+                    theme,
                     (part == 0).then_some(index + 1),
                     number_width,
                     text,
@@ -308,7 +344,10 @@ fn draw_document(
             }
         }
     }
-    frame.render_widget(Paragraph::new(rows).style(Style::new().fg(TEXT)), area);
+    frame.render_widget(
+        Paragraph::new(rows).style(Style::new().fg(theme.text)),
+        area,
+    );
     PreviewViewport {
         area: Rect::new(
             area.x + gutter,
@@ -408,10 +447,10 @@ pub(super) fn selected_preview_text(
     selected.join("\n")
 }
 
-fn numbered_row(number: Option<usize>, width: usize, text: String) -> Line<'static> {
+fn numbered_row(theme: &Theme, number: Option<usize>, width: usize, text: String) -> Line<'static> {
     let number = number.map(|value| value.to_string()).unwrap_or_default();
     Line::from(vec![
-        Span::styled(format!("{number:>width$} │ "), Style::new().fg(MUTED)),
+        Span::styled(format!("{number:>width$} │ "), Style::new().fg(theme.muted)),
         Span::raw(text),
     ])
 }
@@ -463,30 +502,30 @@ fn display_path(text: &str) -> String {
         .collect()
 }
 
-fn option_row(label: &str, selected: bool) -> Line<'static> {
+fn option_row(theme: &Theme, label: &str, selected: bool) -> Line<'static> {
     if selected {
-        Line::styled(format!("> {label} "), active_style())
+        Line::styled(format!("> {label} "), active_style(theme))
     } else {
         Line::from(format!("  {label}"))
     }
 }
 
-fn active_style() -> Style {
+fn active_style(theme: &Theme) -> Style {
     Style::new()
-        .fg(SURFACE)
-        .bg(ACCENT)
+        .fg(theme.surface)
+        .bg(theme.accent)
         .add_modifier(Modifier::BOLD)
 }
 
-fn panel(title: &str, focused: bool, background: Color) -> Block<'_> {
-    let border = if focused { ACCENT } else { BORDER };
+fn panel<'a>(theme: &Theme, title: &'a str, focused: bool, background: Color) -> Block<'a> {
+    let border = if focused { theme.accent } else { theme.border };
     let title_style = if focused {
-        active_style()
+        active_style(theme)
     } else {
-        Style::new().fg(MUTED).add_modifier(Modifier::BOLD)
+        Style::new().fg(theme.muted).add_modifier(Modifier::BOLD)
     };
     Block::bordered()
-        .style(Style::new().fg(TEXT).bg(background))
+        .style(Style::new().fg(theme.text).bg(background))
         .title(Span::styled(format!(" {title} "), title_style))
         .border_style(Style::new().fg(border))
 }
@@ -494,6 +533,7 @@ fn panel(title: &str, focused: bool, background: Color) -> Block<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::Language;
     use ratatui::{Terminal, backend::TestBackend};
 
     fn app_with_entry(language: Language, name: &str) -> App {
@@ -723,6 +763,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         let mut app = app_with_entry(Language::English, "example.txt");
         app.handle_key(crossterm::event::KeyCode::Char('o'));
+        let theme = &THEMES[app.theme];
         terminal
             .draw(|frame| {
                 draw(frame, &mut app);
@@ -730,15 +771,84 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(23, 7)].symbol(), "┌");
-        assert_eq!(buffer[(23, 7)].fg, ACCENT);
-        assert_eq!(buffer[(30, 10)].bg, RAISED);
-        assert_eq!(buffer[(60, 10)].bg, SURFACE);
+        assert_eq!(buffer[(23, 1)].symbol(), "┌");
+        assert_eq!(buffer[(23, 1)].fg, theme.accent);
+        assert_eq!(buffer[(30, 10)].bg, theme.raised);
+        assert_eq!(buffer[(60, 10)].bg, theme.surface);
         let rendered = terminal.backend().to_string();
         assert!(rendered.contains("Options"));
+        assert!(rendered.contains("Tokyo Night"));
         assert!(rendered.contains("Tree"));
         assert!(rendered.contains("Preview"));
         assert!(rendered.contains("example.txt"));
+    }
+
+    #[test]
+    fn options_apply_theme_to_preview_and_scroll_to_selection() {
+        use crossterm::event::KeyCode;
+
+        for (steps, label, background) in [
+            (3, "> One Dark", Color::Rgb(40, 44, 52)),
+            (30, "> Filens Mono", Color::Rgb(0, 0, 0)),
+        ] {
+            let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
+            let mut app = app_with_entry(Language::English, "example.txt");
+            app.handle_key(KeyCode::Char('o'));
+            for _ in 0..steps {
+                app.handle_key(KeyCode::Down);
+            }
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
+            assert!(terminal.backend().to_string().contains(label));
+            app.handle_key(KeyCode::Enter);
+            app.handle_key(KeyCode::Esc);
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
+            assert_eq!(terminal.backend().buffer()[(20, 2)].bg, background);
+        }
+    }
+
+    #[test]
+    fn options_preview_theme_until_confirmed_or_cancelled() {
+        use crossterm::event::KeyCode;
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        let mut app = app_with_entry(Language::English, "example.txt");
+        for (apply, expected) in [(false, THEMES[0].surface), (true, THEMES[1].surface)] {
+            app.handle_key(KeyCode::Char('o'));
+            for _ in 0..3 {
+                app.handle_key(KeyCode::Down);
+            }
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
+            assert_eq!(terminal.backend().buffer()[(60, 10)].bg, THEMES[1].surface);
+            if apply {
+                app.handle_key(KeyCode::Enter);
+                app.handle_key(KeyCode::Down);
+                terminal
+                    .draw(|frame| {
+                        draw(frame, &mut app);
+                    })
+                    .unwrap();
+                assert_eq!(terminal.backend().buffer()[(60, 10)].bg, THEMES[2].surface);
+            }
+            app.handle_key(KeyCode::Esc);
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
+            assert_eq!(terminal.backend().buffer()[(60, 10)].bg, expected);
+        }
     }
 
     #[test]
@@ -755,13 +865,14 @@ mod tests {
         ] {
             let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
             let mut app = app_with_entry(language, "ação.txt");
+            let theme = &THEMES[app.theme];
             terminal
                 .draw(|frame| {
                     draw(frame, &mut app);
                 })
                 .unwrap();
             let rendered = terminal.backend().to_string();
-            assert_eq!(terminal.backend().buffer()[(2, 0)].bg, ACCENT);
+            assert_eq!(terminal.backend().buffer()[(2, 0)].bg, theme.accent);
             assert!(!rendered.contains("Focus:") && !rendered.contains("Foco:"));
             assert!(rendered.contains("ação.txt"));
             assert!(rendered.contains(quit));

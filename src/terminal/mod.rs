@@ -57,7 +57,7 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
         terminal.draw(|frame| {
             let footer;
             (preview, tree, viewport, footer) = ui::draw(frame, app);
-            if app.language_selection.is_none() {
+            if app.options_selection.is_none() {
                 if let Some(selection) = tree_selection {
                     let text = highlight(frame.buffer_mut(), tree.0, tree.1, selection);
                     if copy == Some(0) {
@@ -111,7 +111,7 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
                 if key.code == KeyCode::Char('q') {
                     return Ok(());
                 }
-                if app.language_selection.is_none() {
+                if app.options_selection.is_none() {
                     match key.code {
                         KeyCode::Up | KeyCode::Down if app.tree_focused => {
                             tree_selection = None;
@@ -137,7 +137,7 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
             Event::Key(key)
                 if key.kind == KeyEventKind::Repeat
                     && !app.tree_focused
-                    && app.language_selection.is_none()
+                    && app.options_selection.is_none()
                     && matches!(
                         key.code,
                         KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right
@@ -149,7 +149,7 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
                 }
                 app.handle_key(key.code);
             }
-            Event::Mouse(mouse) if app.language_selection.is_none() => {
+            Event::Mouse(mouse) if app.options_selection.is_none() => {
                 let position = Position::new(mouse.column, mouse.row);
                 match mouse.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
