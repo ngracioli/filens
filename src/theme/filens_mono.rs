@@ -2,14 +2,14 @@ use super::{Theme, rgb, syntax};
 
 pub(super) const PALETTE: Theme = Theme {
     name: "Filens Mono",
-    surface: rgb(0x242424),
-    raised: rgb(0x2c2c2c),
-    border: rgb(0x474747),
-    text: rgb(0xc8c8c8),
+    surface: rgb(0x1c1c1c),
+    raised: rgb(0x282828),
+    border: rgb(0x555555),
+    text: rgb(0xdedede),
     muted: rgb(0xa0a0a0),
-    accent: rgb(0x939393),
-    directory: rgb(0xb8b8b8),
+    accent: rgb(0xb0b0b0),
+    directory: rgb(0xc4c4c4),
     syntax: syntax([
-        0xa0a0a0, 0xd8d8d8, 0xefefef, 0xb8b8b8, 0xe0e0e0, 0xb8b8b8, 0xe0e0e0, 0xefefef,
+        0xa0a0a0, 0xcacaca, 0xf3f3f3, 0xb8b8b8, 0xe9e9e9, 0xb8b8b8, 0xe9e9e9, 0xf3f3f3,
     ]),
 };
