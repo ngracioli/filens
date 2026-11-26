@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Margin, Rect},
+    layout::{Constraint, Layout, Margin, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
@@ -11,8 +11,8 @@ use ratatui::{
 use rust_i18n::t;
 
 use crate::{
-    app::{App, Preview},
-    preview,
+    app::{App, OptionsSelection, Preview},
+    locales, preview,
     theme::{THEMES, Theme},
 };
 
@@ -23,16 +23,30 @@ pub(super) struct PreviewViewport {
     pub(super) last_column: usize,
 }
 
+#[derive(Default)]
+pub(super) struct OptionsViewport {
+    area: Rect,
+    offset: usize,
+}
+
+impl OptionsViewport {
+    pub(super) fn row_at(&self, position: Position) -> Option<usize> {
+        self.area
+            .contains(position)
+            .then(|| self.offset + usize::from(position.y - self.area.y))
+    }
+}
+
 pub(super) fn draw(
     frame: &mut Frame<'_>,
     app: &mut App,
-) -> (Rect, (Rect, u16), PreviewViewport, Rect) {
-    let theme_index = app
-        .options_selection
-        .and_then(|index| index.checked_sub(2))
-        .unwrap_or(app.theme);
+) -> (Rect, (Rect, u16), PreviewViewport, Rect, OptionsViewport) {
+    let theme_index = match app.options_selection {
+        Some(OptionsSelection::Theme(index)) => index,
+        _ => app.theme,
+    };
     let theme = &THEMES[theme_index];
-    let locale = app.language.locale();
+    let locale = app.language;
     let browser_help = browser_help(app);
     let count_help = t!("footer.copied", locale = locale, count = 999999);
     let footer_height = match frame.area().width {
@@ -144,56 +158,66 @@ pub(super) fn draw(
         }
     }
 
-    let help = if let Some(selected) = app.options_selection {
-        let heading = |label| Line::styled(label, Style::new().fg(theme.muted));
-        let mut rows = vec![
-            heading(t!("options.language", locale = locale)),
-            option_row(
-                theme,
-                &t!("options.english", locale = locale),
-                selected == 0,
+    let mut options_viewport = OptionsViewport::default();
+    let help = if let Some(selection) = app.options_selection {
+        let language = t!("options.language", locale = locale);
+        let themes = t!("options.theme", locale = locale);
+        let (title, selected, rows) = match selection {
+            OptionsSelection::Menu(index) => (
+                t!("panel.options", locale = locale),
+                index,
+                vec![
+                    option_row(theme, &format!("{language} ›"), index == 0),
+                    option_row(theme, &format!("{themes} ›"), index == 1),
+                ],
             ),
-            option_row(
-                theme,
-                &t!("options.portuguese", locale = locale),
-                selected == 1,
+            OptionsSelection::Language(index) => (
+                language,
+                index,
+                locales()
+                    .iter()
+                    .enumerate()
+                    .map(|(row, locale)| {
+                        option_row(
+                            theme,
+                            &t!("locale.name", locale = locale.as_ref()),
+                            index == row,
+                        )
+                    })
+                    .collect(),
             ),
-            heading(t!("options.theme", locale = locale)),
-        ];
-        rows.extend(THEMES.iter().enumerate().map(|(index, item)| {
-            let label = if index == app.theme {
-                format!("{} ✓", item.name)
-            } else {
-                item.name.to_owned()
-            };
-            option_row(theme, &label, selected == index + 2)
-        }));
+            OptionsSelection::Theme(index) => (
+                themes,
+                index,
+                THEMES
+                    .iter()
+                    .enumerate()
+                    .map(|(row, item)| {
+                        let label = if row == app.theme {
+                            format!("{} ✓", item.name)
+                        } else {
+                            item.name.to_owned()
+                        };
+                        option_row(theme, &label, row == index)
+                    })
+                    .collect(),
+            ),
+        };
         let width = body.width.min(34);
         let row_count = rows.len();
         let height = body.height.saturating_sub(2).max(body.height.min(5));
         let height = height.min(row_count as u16 + 2);
-        let mut state =
-            ListState::default().with_selected(Some(selected + if selected < 2 { 1 } else { 2 }));
+        let mut state = ListState::default().with_selected(Some(selected));
         let modal = Rect::new(
             body.x + (body.width - width) / 2,
             body.y + (body.height - height).div_ceil(2),
             width,
             height,
         );
+        let block = panel(theme, &title, true, theme.raised).padding(Padding::horizontal(1));
+        let mut options_area = block.inner(modal);
         frame.render_widget(Clear, modal);
-        frame.render_stateful_widget(
-            List::new(rows).block(
-                panel(
-                    theme,
-                    &t!("panel.options", locale = locale),
-                    true,
-                    theme.raised,
-                )
-                .padding(Padding::horizontal(1)),
-            ),
-            modal,
-            &mut state,
-        );
+        frame.render_stateful_widget(List::new(rows).block(block), modal, &mut state);
         let visible_rows = usize::from(height.saturating_sub(2));
         if row_count > visible_rows && visible_rows > 0 && width >= 4 {
             let mut scrollbar = ScrollbarState::new(row_count - visible_rows + 1)
@@ -206,7 +230,17 @@ pub(super) fn draw(
                 &mut scrollbar,
             );
         }
-        t!("footer.options", locale = locale)
+        options_area.height = options_area
+            .height
+            .min(row_count.saturating_sub(state.offset()) as u16);
+        options_viewport = OptionsViewport {
+            area: options_area,
+            offset: state.offset(),
+        };
+        match selection {
+            OptionsSelection::Menu(_) => t!("footer.options_menu", locale = locale),
+            _ => t!("footer.options", locale = locale),
+        }
     } else {
         browser_help
     };
@@ -223,12 +257,13 @@ pub(super) fn draw(
         (tree_text, tree_text.y + tree_rows),
         preview_text,
         footer,
+        options_viewport,
     )
 }
 
 pub(super) fn draw_copy_footer(frame: &mut Frame<'_>, area: Rect, app: &App, count: usize) {
     let theme = &THEMES[app.theme];
-    let locale = app.language.locale();
+    let locale = app.language;
     let help = browser_help(app);
     let copied = t!("footer.copied", locale = locale, count = count);
     frame.render_widget(
@@ -246,7 +281,7 @@ pub(super) fn draw_copy_footer(frame: &mut Frame<'_>, area: Rect, app: &App, cou
 }
 
 fn browser_help(app: &App) -> std::borrow::Cow<'static, str> {
-    let locale = app.language.locale();
+    let locale = app.language;
     let help = t!("footer.browser", locale = locale);
     if !matches!(app.preview, Preview::File { result: Ok(_), .. }) {
         return help;
@@ -284,7 +319,7 @@ fn draw_document(
     app: &App,
     theme: &Theme,
 ) -> PreviewViewport {
-    let locale = app.language.locale();
+    let locale = app.language;
     let mut rows = Vec::new();
     if document.truncated {
         rows.push(Line::styled(
@@ -533,10 +568,9 @@ fn panel<'a>(theme: &Theme, title: &'a str, focused: bool, background: Color) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::Language;
     use ratatui::{Terminal, backend::TestBackend};
 
-    fn app_with_entry(language: Language, name: &str) -> App {
+    fn app_with_entry(language: &'static str, name: &str) -> App {
         let entry = crate::tree::Entry {
             path: name.into(),
             kind: std::fs::metadata("Cargo.toml").unwrap().file_type(),
@@ -556,7 +590,7 @@ mod tests {
         let file = folder.join("child.txt");
         std::fs::write(&file, "").unwrap();
         let entries = crate::tree::read_directory(&root, 0).unwrap();
-        let mut app = App::new(Language::English, root.clone(), entries);
+        let mut app = App::new("en", root.clone(), entries);
         let mut terminal = Terminal::new(TestBackend::new(120, 12)).unwrap();
 
         app.handle_key(KeyCode::Enter);
@@ -615,7 +649,7 @@ mod tests {
         }
         let entries = crate::tree::read_directory(&root, 0).unwrap();
         std::fs::remove_file(root.join("c-removed")).unwrap();
-        let mut app = App::new(Language::BrazilianPortuguese, root.clone(), entries);
+        let mut app = App::new("pt-BR", root.clone(), entries);
         let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
 
         for (index, expected) in [
@@ -655,7 +689,7 @@ mod tests {
     fn preview_arrows_scroll_numbered_lines_and_stop_at_the_end() {
         use crossterm::event::KeyCode;
 
-        let mut app = app_with_entry(Language::English, "example.txt");
+        let mut app = app_with_entry("en", "example.txt");
         app.preview = Preview::File {
             path: "example.txt".into(),
             result: Ok(preview::Document {
@@ -691,7 +725,7 @@ mod tests {
     fn preview_wrap_and_horizontal_scroll_preserve_source_numbers() {
         use crossterm::event::KeyCode;
 
-        let mut app = app_with_entry(Language::English, "example.txt");
+        let mut app = app_with_entry("en", "example.txt");
         app.preview = Preview::File {
             path: "example.txt".into(),
             result: Ok(preview::Document {
@@ -728,7 +762,7 @@ mod tests {
         app.handle_key(KeyCode::Char('w'));
         assert!(render(&mut app).contains("2 │   e\u{301}"));
 
-        app.language = Language::BrazilianPortuguese;
+        app.language = "pt-BR";
         assert!(render(&mut app).contains("Quebra desligada"));
         app.handle_key(KeyCode::Char('w'));
         assert!(render(&mut app).contains("Quebra ligada"));
@@ -738,7 +772,7 @@ mod tests {
     fn wrapping_moves_a_portuguese_word_to_the_next_row() {
         use crossterm::event::KeyCode;
 
-        let mut app = app_with_entry(Language::BrazilianPortuguese, "example.txt");
+        let mut app = app_with_entry("pt-BR", "example.txt");
         app.preview = Preview::File {
             path: "example.txt".into(),
             result: Ok(preview::Document {
@@ -761,7 +795,7 @@ mod tests {
     #[test]
     fn options_overlay_keeps_the_browser_visible() {
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        let mut app = app_with_entry(Language::English, "example.txt");
+        let mut app = app_with_entry("en", "example.txt");
         app.handle_key(crossterm::event::KeyCode::Char('o'));
         let theme = &THEMES[app.theme];
         terminal
@@ -771,13 +805,16 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(23, 1)].symbol(), "┌");
-        assert_eq!(buffer[(23, 1)].fg, theme.accent);
+        assert_eq!(buffer[(23, 8)].symbol(), "┌");
+        assert_eq!(buffer[(23, 8)].fg, theme.accent);
         assert_eq!(buffer[(30, 10)].bg, theme.raised);
         assert_eq!(buffer[(60, 10)].bg, theme.surface);
         let rendered = terminal.backend().to_string();
         assert!(rendered.contains("Options"));
-        assert!(rendered.contains("Tokyo Night"));
+        assert!(rendered.contains("Language ›"));
+        assert!(rendered.contains("Themes ›"));
+        assert!(!rendered.contains("English"));
+        assert!(!rendered.contains("Tokyo Night"));
         assert!(rendered.contains("Tree"));
         assert!(rendered.contains("Preview"));
         assert!(rendered.contains("example.txt"));
@@ -788,12 +825,14 @@ mod tests {
         use crossterm::event::KeyCode;
 
         for (steps, label, background) in [
-            (3, "> One Dark", Color::Rgb(40, 44, 52)),
+            (1, "> One Dark", Color::Rgb(40, 44, 52)),
             (30, "> Filens Mono", Color::Rgb(36, 36, 36)),
         ] {
             let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
-            let mut app = app_with_entry(Language::English, "example.txt");
+            let mut app = app_with_entry("en", "example.txt");
             app.handle_key(KeyCode::Char('o'));
+            app.handle_key(KeyCode::Down);
+            app.handle_key(KeyCode::Enter);
             for _ in 0..steps {
                 app.handle_key(KeyCode::Down);
             }
@@ -804,6 +843,7 @@ mod tests {
                 .unwrap();
             assert!(terminal.backend().to_string().contains(label));
             app.handle_key(KeyCode::Enter);
+            app.handle_key(KeyCode::Esc);
             app.handle_key(KeyCode::Esc);
             terminal
                 .draw(|frame| {
@@ -819,12 +859,12 @@ mod tests {
         use crossterm::event::KeyCode;
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        let mut app = app_with_entry(Language::English, "example.txt");
+        let mut app = app_with_entry("en", "example.txt");
         for (apply, expected) in [(false, THEMES[0].surface), (true, THEMES[1].surface)] {
             app.handle_key(KeyCode::Char('o'));
-            for _ in 0..3 {
-                app.handle_key(KeyCode::Down);
-            }
+            app.handle_key(KeyCode::Down);
+            app.handle_key(KeyCode::Enter);
+            app.handle_key(KeyCode::Down);
             terminal
                 .draw(|frame| {
                     draw(frame, &mut app);
@@ -852,16 +892,30 @@ mod tests {
     }
 
     #[test]
+    fn language_menu_shows_each_catalog_name_at_narrow_width() {
+        use crossterm::event::KeyCode;
+
+        for locale in locales() {
+            let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
+            let mut app = app_with_entry(locale, "example.txt");
+            app.handle_key(KeyCode::Char('o'));
+            app.handle_key(KeyCode::Enter);
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
+            let name = t!("locale.name", locale = locale.as_ref());
+            let screen = terminal.backend().to_string();
+            assert!(screen.contains(name.as_ref()), "{locale}: {screen}");
+        }
+    }
+
+    #[test]
     fn renders_both_languages_at_narrow_width() {
         for (language, options, back, selection, quit) in [
-            (Language::English, "Options", "Back", "> English", "Quit"),
-            (
-                Language::BrazilianPortuguese,
-                "Opções",
-                "Voltar",
-                "> Português do Brasil",
-                "Sair",
-            ),
+            ("en", "Options", "Close", "> English", "Quit"),
+            ("pt-BR", "Opções", "Fechar", "> Português do Brasil", "Sair"),
         ] {
             let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
             let mut app = app_with_entry(language, "ação.txt");
@@ -888,8 +942,16 @@ mod tests {
             assert!(rendered.contains(options));
             assert!(rendered.contains("Esc"));
             assert!(rendered.contains(back));
-            assert!(rendered.contains(selection));
             assert!(rendered.contains("↑↓"));
+            assert!(!rendered.contains(selection));
+
+            app.handle_key(crossterm::event::KeyCode::Enter);
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
+            assert!(terminal.backend().to_string().contains(selection));
         }
     }
 }

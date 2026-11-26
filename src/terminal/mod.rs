@@ -53,10 +53,11 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
         let mut preview = Rect::default();
         let mut tree = (Rect::default(), 0);
         let mut viewport = ui::PreviewViewport::default();
+        let mut options = ui::OptionsViewport::default();
         let mut clipboard = String::new();
         terminal.draw(|frame| {
             let footer;
-            (preview, tree, viewport, footer) = ui::draw(frame, app);
+            (preview, tree, viewport, footer, options) = ui::draw(frame, app);
             if app.options_selection.is_none() {
                 if let Some(selection) = tree_selection {
                     let text = highlight(frame.buffer_mut(), tree.0, tree.1, selection);
@@ -149,7 +150,17 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
                 }
                 app.handle_key(key.code);
             }
-            Event::Mouse(mouse) if app.options_selection.is_none() => {
+            Event::Mouse(mouse) if app.options_selection.is_some() => match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if let Some(row) = options.row_at(Position::new(mouse.column, mouse.row)) {
+                        app.click_option(row);
+                    }
+                }
+                MouseEventKind::ScrollUp => app.handle_key(KeyCode::Up),
+                MouseEventKind::ScrollDown => app.handle_key(KeyCode::Down),
+                _ => {}
+            },
+            Event::Mouse(mouse) => {
                 let position = Position::new(mouse.column, mouse.row);
                 match mouse.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
@@ -404,7 +415,7 @@ mod tests {
 
     #[test]
     fn preview_selection_follows_source_rows_and_copies_an_offscreen_anchor() {
-        let mut app = App::new(crate::app::Language::English, ".".into(), Vec::new());
+        let mut app = App::new("en", ".".into(), Vec::new());
         app.preview = crate::app::Preview::File {
             path: "text.txt".into(),
             result: Ok(crate::preview::Document {

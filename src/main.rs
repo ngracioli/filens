@@ -4,13 +4,22 @@ mod terminal;
 mod theme;
 mod tree;
 
-use std::{env, ffi::OsString, path::PathBuf, process::ExitCode};
+use std::{borrow::Cow, env, ffi::OsString, path::PathBuf, process::ExitCode, sync::OnceLock};
 
 use rust_i18n::t;
 
-use app::{App, Language};
+use app::App;
 
 rust_i18n::i18n!("locales", fallback = "en");
+
+fn locales() -> &'static [Cow<'static, str>] {
+    static LOCALES: OnceLock<Vec<Cow<'static, str>>> = OnceLock::new();
+    LOCALES.get_or_init(|| {
+        let mut locales = rust_i18n::available_locales!();
+        locales.sort_unstable();
+        locales
+    })
+}
 
 fn main() -> ExitCode {
     match open_directory() {
@@ -23,12 +32,12 @@ fn main() -> ExitCode {
 }
 
 fn open_directory() -> Result<(), String> {
-    let (language, path) = parse_args(env::args_os().skip(1))?;
-    let locale = language.locale();
+    let path = parse_args(env::args_os().skip(1))?;
+    let language = "en";
     let entries = tree::read_directory(&path, 0).map_err(|error| {
         t!(
             "error.read_directory",
-            locale = locale,
+            locale = language,
             path = path.display(),
             cause = error
         )
@@ -36,40 +45,16 @@ fn open_directory() -> Result<(), String> {
     })?;
 
     let mut app = App::new(language, path, entries);
-    terminal::run(&mut app).map_err(|error| {
-        t!(
-            "error.terminal",
-            locale = app.language.locale(),
-            cause = error
-        )
-        .into_owned()
-    })
+    terminal::run(&mut app)
+        .map_err(|error| t!("error.terminal", locale = app.language, cause = error).into_owned())
 }
 
-fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<(Language, PathBuf), String> {
+fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<PathBuf, String> {
     let mut args = args.into_iter().peekable();
-    let mut language = Language::default();
-
-    if args.next_if(|arg| arg == "--lang").is_some() {
-        language = match args.next() {
-            Some(value) if value == "en" => Language::English,
-            Some(value) if value == "pt-BR" => Language::BrazilianPortuguese,
-            Some(value) => {
-                return Err(t!(
-                    "error.unsupported_language",
-                    locale = "en",
-                    language = value.to_string_lossy()
-                )
-                .into_owned());
-            }
-            None => return Err(t!("cli.usage", locale = "en").into_owned()),
-        };
-    }
-
     args.next_if(|arg| arg == "--");
     match (args.next(), args.next()) {
-        (Some(path), None) => Ok((language, PathBuf::from(path))),
-        _ => Err(t!("cli.usage", locale = language.locale()).into_owned()),
+        (Some(path), None) => Ok(PathBuf::from(path)),
+        _ => Err(t!("cli.usage", locale = "en").into_owned()),
     }
 }
 
@@ -78,24 +63,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_requested_language_and_preserves_path() {
-        for (args, expected) in [
-            (vec!["ação"], Language::English),
-            (vec!["--lang", "en", "ação"], Language::English),
-            (
-                vec!["--lang", "pt-BR", "ação"],
-                Language::BrazilianPortuguese,
-            ),
-        ] {
+    fn parses_a_single_directory_and_preserves_its_path() {
+        for args in [vec!["ação"], vec!["--", "ação"]] {
             assert_eq!(
                 parse_args(args.into_iter().map(OsString::from)),
-                Ok((expected, PathBuf::from("ação"))),
+                Ok(PathBuf::from("ação")),
             );
         }
-        assert!(
-            parse_args(["--lang", "fr", "."].map(OsString::from))
-                .unwrap_err()
-                .contains("Unsupported language: fr")
-        );
+        assert!(parse_args([]).is_err());
+        assert!(parse_args(["--lang", "pt-BR", "."].map(OsString::from)).is_err());
     }
 }

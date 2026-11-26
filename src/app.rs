@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 use ratatui::widgets::ListState;
 
 use crate::{
-    preview,
+    locales, preview,
     theme::THEMES,
     tree::{self, Entry},
 };
@@ -21,20 +21,11 @@ pub(crate) enum Preview {
     },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Language {
-    #[default]
-    English,
-    BrazilianPortuguese,
-}
-
-impl Language {
-    pub(crate) fn locale(self) -> &'static str {
-        match self {
-            Self::English => "en",
-            Self::BrazilianPortuguese => "pt-BR",
-        }
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OptionsSelection {
+    Menu(usize),
+    Language(usize),
+    Theme(usize),
 }
 
 pub(crate) struct App {
@@ -47,14 +38,14 @@ pub(crate) struct App {
     pub(crate) preview_column: usize,
     pub(crate) preview_last_column: usize,
     pub(crate) preview_wrap: bool,
-    pub(crate) language: Language,
+    pub(crate) language: &'static str,
     pub(crate) tree_focused: bool,
-    pub(crate) options_selection: Option<usize>,
+    pub(crate) options_selection: Option<OptionsSelection>,
     pub(crate) theme: usize,
 }
 
 impl App {
-    pub(crate) fn new(language: Language, root: PathBuf, entries: Vec<Entry>) -> Self {
+    pub(crate) fn new(language: &'static str, root: PathBuf, entries: Vec<Entry>) -> Self {
         let selected = (!entries.is_empty()).then_some(0);
         Self {
             root,
@@ -74,15 +65,40 @@ impl App {
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyCode) {
-        if let Some(selected) = &mut self.options_selection {
+        if let Some(selection) = &mut self.options_selection {
+            use OptionsSelection::{Language as LanguageMenu, Menu, Theme};
+
             match key {
-                KeyCode::Esc => self.options_selection = None,
-                KeyCode::Up => *selected = selected.saturating_sub(1),
-                KeyCode::Down => *selected = (*selected + 1).min(THEMES.len() + 1),
-                KeyCode::Enter => match *selected {
-                    0 => self.language = Language::English,
-                    1 => self.language = Language::BrazilianPortuguese,
-                    index => self.theme = index - 2,
+                KeyCode::Esc => {
+                    self.options_selection = match selection {
+                        Menu(_) => None,
+                        LanguageMenu(_) => Some(Menu(0)),
+                        Theme(_) => Some(Menu(1)),
+                    };
+                }
+                KeyCode::Up | KeyCode::Down => {
+                    let (index, last) = match selection {
+                        Menu(index) => (index, 1),
+                        LanguageMenu(index) => (index, locales().len() - 1),
+                        Theme(index) => (index, THEMES.len() - 1),
+                    };
+                    *index = if key == KeyCode::Up {
+                        index.saturating_sub(1)
+                    } else {
+                        (*index + 1).min(last)
+                    };
+                }
+                KeyCode::Enter => match *selection {
+                    Menu(0) => {
+                        let index = locales()
+                            .iter()
+                            .position(|locale| locale == self.language)
+                            .unwrap_or_default();
+                        *selection = LanguageMenu(index);
+                    }
+                    Menu(_) => *selection = Theme(self.theme),
+                    LanguageMenu(index) => self.language = &locales()[index],
+                    Theme(index) => self.theme = index,
                 },
                 _ => {}
             }
@@ -100,8 +116,7 @@ impl App {
                         .min(self.preview_last_column.max(self.preview_column));
                 }
                 KeyCode::Char('o') => {
-                    self.options_selection =
-                        Some(usize::from(self.language == Language::BrazilianPortuguese));
+                    self.options_selection = Some(OptionsSelection::Menu(0));
                 }
                 KeyCode::Up if self.tree_focused => {
                     if let Some(index) = self.tree_selection.selected() {
@@ -119,6 +134,18 @@ impl App {
                 KeyCode::Down => self.scroll_preview(1),
                 _ => {}
             }
+        }
+    }
+
+    pub(crate) fn click_option(&mut self, row: usize) {
+        if let Some(selection) = &mut self.options_selection {
+            let index = match selection {
+                OptionsSelection::Menu(index)
+                | OptionsSelection::Language(index)
+                | OptionsSelection::Theme(index) => index,
+            };
+            *index = row;
+            self.handle_key(KeyCode::Enter);
         }
     }
 
@@ -177,21 +204,24 @@ mod tests {
 
     #[test]
     fn options_change_language_and_preserve_panel_focus() {
-        let mut app = App::new(Language::English, ".".into(), Vec::new());
+        let mut app = App::new("en", ".".into(), Vec::new());
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Char('o'));
-        assert_eq!(app.options_selection, Some(0));
-        app.handle_key(KeyCode::Down);
-        assert_eq!(app.options_selection, Some(1));
-        assert_eq!(app.language, Language::English);
+        assert_eq!(app.options_selection, Some(OptionsSelection::Menu(0)));
         app.handle_key(KeyCode::Enter);
-        assert_eq!(app.language, Language::BrazilianPortuguese);
-        app.handle_key(KeyCode::Up);
-        assert_eq!(app.options_selection, Some(0));
+        let portuguese = locales()
+            .iter()
+            .position(|locale| locale == "pt-BR")
+            .unwrap();
+        assert_eq!(app.language, "en");
+        app.click_option(portuguese);
+        assert_eq!(app.language, "pt-BR");
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Esc);
+        assert_eq!(app.options_selection, Some(OptionsSelection::Menu(0)));
+        app.handle_key(KeyCode::Esc);
         assert_eq!(app.options_selection, None);
-        assert_eq!(app.language, Language::BrazilianPortuguese);
+        assert_eq!(app.language, "pt-BR");
         assert!(!app.tree_focused);
     }
 }
