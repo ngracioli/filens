@@ -23,10 +23,12 @@ use ratatui::{
 };
 
 use crate::{
-    app::App,
+    app::{App, Preview},
     config::{self, Preferences},
+    preview,
 };
 
+const COPY_FILE: usize = 2;
 const DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 
 pub(crate) fn run(app: &mut App, config_path: Option<&Path>) -> io::Result<()> {
@@ -64,6 +66,18 @@ fn run_session(
         let mut viewport = ui::PreviewViewport::default();
         let mut options = ui::OptionsViewport::default();
         let mut clipboard = String::new();
+        let mut copy_error = None;
+        if copy == Some(COPY_FILE)
+            && let Preview::File {
+                path,
+                result: Ok(document),
+            } = &app.preview
+        {
+            match preview::full_text(path, document) {
+                Ok(text) => clipboard = text,
+                Err(error) => copy_error = Some(error),
+            }
+        }
         terminal.draw(|frame| {
             let footer;
             (preview, tree, viewport, footer, options) = ui::draw(frame, app);
@@ -91,21 +105,24 @@ fn run_session(
                     }
                 }
                 if let Some((index, count)) = copied
-                    && if index == 0 {
-                        tree_selection.is_some()
-                    } else {
-                        preview_selection.is_some()
+                    && match index {
+                        0 => tree_selection.is_some(),
+                        COPY_FILE => true,
+                        _ => preview_selection.is_some(),
                     }
                 {
-                    ui::draw_copy_footer(frame, footer, app, count);
+                    ui::draw_copy_footer(frame, footer, app, count, index == COPY_FILE);
                 }
+            }
+            if let Some(error) = &copy_error {
+                ui::draw_copy_error(frame, footer, app, error);
             }
             if let Some(error) = &save_error {
                 ui::draw_save_error(frame, footer, app, error);
             }
         })?;
         if let Some(index) = copy.take()
-            && !clipboard.is_empty()
+            && (!clipboard.is_empty() || (index == COPY_FILE && copy_error.is_none()))
         {
             let count = clipboard.chars().count();
             match execute!(io::stdout(), CopyToClipboard::to_clipboard_from(clipboard)) {
@@ -119,6 +136,12 @@ fn run_session(
         }
 
         let previous = (app.language, app.theme);
+        if copied.is_some_and(|(index, _)| index == COPY_FILE) {
+            copied = None;
+            if !event::poll(Duration::from_millis(1200))? {
+                continue;
+            }
+        }
         let event = event::read()?;
         save_error = None;
         match event {
@@ -143,6 +166,12 @@ fn run_session(
                         KeyCode::Char('w') | KeyCode::Left | KeyCode::Right => {
                             preview_selection = None;
                             dragging = None;
+                        }
+                        KeyCode::Char('c')
+                            if !app.tree_focused
+                                && matches!(app.preview, Preview::File { result: Ok(_), .. }) =>
+                        {
+                            copy = Some(COPY_FILE);
                         }
                         KeyCode::Char('o') => dragging = None,
                         _ => {}

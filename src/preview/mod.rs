@@ -30,14 +30,7 @@ impl From<io::Error> for Error {
 }
 
 pub(crate) fn open(path: &Path) -> Result<Document, Error> {
-    if !fs::metadata(path)?.is_file() {
-        return Err(Error::NotRegular);
-    }
-    let file = File::open(path)?;
-    if !file.metadata()?.is_file() {
-        return Err(Error::NotRegular);
-    }
-
+    let file = open_regular(path)?;
     let mut bytes = Vec::new();
     file.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes)?;
     let truncated = bytes.len() > MAX_BYTES;
@@ -49,6 +42,26 @@ pub(crate) fn open(path: &Path) -> Result<Document, Error> {
         truncated,
         highlights,
     })
+}
+
+pub(crate) fn full_text(path: &Path, document: &Document) -> Result<String, Error> {
+    if !document.truncated {
+        return Ok(document.text.clone());
+    }
+    let mut bytes = Vec::new();
+    open_regular(path)?.read_to_end(&mut bytes)?;
+    decode(&bytes, false)
+}
+
+fn open_regular(path: &Path) -> Result<File, Error> {
+    if !fs::metadata(path)?.is_file() {
+        return Err(Error::NotRegular);
+    }
+    let file = File::open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(Error::NotRegular);
+    }
+    Ok(file)
 }
 
 fn decode(bytes: &[u8], truncated: bool) -> Result<String, Error> {
@@ -119,6 +132,19 @@ mod tests {
             decode(&partial_utf16, false),
             Err(Error::Encoding)
         ));
+    }
+
+    #[test]
+    fn copies_text_beyond_the_preview_limit() {
+        let path =
+            std::env::temp_dir().join(format!("filens-full-copy-{}.txt", std::process::id()));
+        let text = format!("{}\r\nend\n", "x".repeat(MAX_BYTES));
+        fs::write(&path, &text).unwrap();
+        let document = open(&path).ok().unwrap();
+        assert!(document.truncated);
+        let copied = full_text(&path, &document);
+        fs::remove_file(path).unwrap();
+        assert_eq!(copied.ok().as_deref(), Some(text.as_str()));
     }
 
     #[cfg(unix)]

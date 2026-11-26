@@ -49,18 +49,15 @@ pub(super) fn draw(
     };
     let theme = &THEMES[theme_index];
     let locale = app.language;
-    let browser_help = browser_help(app);
-    let count_help = t!("footer.copied", locale = locale, count = 999999);
+    let help = match app.options_selection {
+        Some(OptionsSelection::Menu(_)) => t!("footer.options_menu", locale = locale),
+        Some(_) => t!("footer.options", locale = locale),
+        None => browser_help(app),
+    };
     let footer_height = match frame.area().width {
         0..=39 => 3,
         40..=79 => 2,
-        width
-            if app.options_selection.is_none()
-                && usize::from(width)
-                    < Span::raw(format!("{browser_help} {count_help}")).width() =>
-        {
-            2
-        }
+        width if usize::from(width) < Span::raw(help.as_ref()).width() => 2,
         _ => 1,
     };
     let [body, footer] = Layout::vertical([Constraint::Min(0), Constraint::Length(footer_height)])
@@ -146,14 +143,7 @@ pub(super) fn draw(
                     app.preview_last_column = preview_text.last_column;
                 }
                 Err(error) => {
-                    let message = match error {
-                        preview::Error::Read(cause) => {
-                            t!("preview.read_error", locale = locale, cause = cause)
-                        }
-                        preview::Error::NotRegular => t!("preview.not_regular", locale = locale),
-                        preview::Error::Binary => t!("preview.binary", locale = locale),
-                        preview::Error::Encoding => t!("preview.encoding", locale = locale),
-                    };
+                    let message = preview_error(locale, error);
                     draw_message(frame, content, theme, &message);
                 }
             }
@@ -161,7 +151,7 @@ pub(super) fn draw(
     }
 
     let mut options_viewport = OptionsViewport::default();
-    let help = if let Some(selection) = app.options_selection {
+    if let Some(selection) = app.options_selection {
         let language = t!("options.language", locale = locale);
         let themes = t!("options.theme", locale = locale);
         let (title, selected, rows) = match selection {
@@ -239,14 +229,18 @@ pub(super) fn draw(
             area: options_area,
             offset: state.offset(),
         };
-        match selection {
-            OptionsSelection::Menu(_) => t!("footer.options_menu", locale = locale),
-            _ => t!("footer.options", locale = locale),
+    }
+    let mut spans = Vec::new();
+    for (index, action) in help.split(" · ").enumerate() {
+        if index != 0 {
+            spans.push(Span::raw(" · "));
         }
-    } else {
-        browser_help
-    };
-    draw_footer(frame, footer, theme, &help);
+        let (key, label) = action.split_once(' ').unwrap_or((action, ""));
+        spans.push(Span::styled(key, Style::new().fg(theme.text)));
+        spans.push(Span::raw(" "));
+        spans.push(Span::raw(label));
+    }
+    draw_footer(frame, footer, theme, Line::from(spans));
     let tree_rows = tree_text.height.min(
         app.entries
             .len()
@@ -271,46 +265,77 @@ pub(super) fn draw_save_error(
 ) {
     let message = t!("error.save_config", locale = app.language, cause = error);
     frame.render_widget(Clear, area);
-    draw_footer(frame, area, &THEMES[app.theme], &message);
+    draw_footer(frame, area, &THEMES[app.theme], Line::raw(message));
 }
 
-pub(super) fn draw_copy_footer(frame: &mut Frame<'_>, area: Rect, app: &App, count: usize) {
-    let theme = &THEMES[app.theme];
-    let locale = app.language;
-    let help = browser_help(app);
-    let copied = t!("footer.copied", locale = locale, count = count);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::raw(format!("{help} ")),
-            Span::styled(
-                copied,
-                Style::new().fg(theme.accent).add_modifier(Modifier::BOLD),
-            ),
-        ]))
-        .style(Style::new().fg(theme.text).bg(theme.raised))
-        .wrap(Wrap { trim: true }),
+fn preview_error(locale: &str, error: &preview::Error) -> std::borrow::Cow<'static, str> {
+    match error {
+        preview::Error::Read(cause) => {
+            t!("preview.read_error", locale = locale, cause = cause)
+        }
+        preview::Error::NotRegular => t!("preview.not_regular", locale = locale),
+        preview::Error::Binary => t!("preview.binary", locale = locale),
+        preview::Error::Encoding => t!("preview.encoding", locale = locale),
+    }
+}
+
+pub(super) fn draw_copy_error(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    app: &App,
+    error: &preview::Error,
+) {
+    frame.render_widget(Clear, area);
+    draw_footer(
+        frame,
         area,
+        &THEMES[app.theme],
+        Line::raw(preview_error(app.language, error)),
     );
+}
+
+pub(super) fn draw_copy_footer(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    app: &App,
+    count: usize,
+    whole_file: bool,
+) {
+    let locale = app.language;
+    let copied = if whole_file {
+        t!("footer.file_copied", locale = locale)
+    } else {
+        t!("footer.copied", locale = locale, count = count)
+    };
+    frame.render_widget(Clear, area);
+    draw_footer(frame, area, &THEMES[app.theme], Line::raw(copied));
 }
 
 fn browser_help(app: &App) -> std::borrow::Cow<'static, str> {
     let locale = app.language;
-    let help = t!("footer.browser", locale = locale);
-    if !matches!(app.preview, Preview::File { result: Ok(_), .. }) {
-        return help;
+    if app.tree_focused {
+        return t!("footer.tree", locale = locale);
     }
-    let wrap = if app.preview_wrap {
-        t!("footer.wrap_on", locale = locale)
+    let focus = t!("footer.focus_tree", locale = locale);
+    if !matches!(app.preview, Preview::File { result: Ok(_), .. }) {
+        return focus;
+    }
+    let scroll = t!("footer.scroll", locale = locale);
+    let copy = t!("footer.copy_file", locale = locale);
+    if app.preview_wrap {
+        let wrap = t!("footer.wrap_on", locale = locale);
+        format!("{focus} · {scroll} · {copy} · {wrap}").into()
     } else {
-        t!("footer.wrap_off", locale = locale)
-    };
-    format!("{wrap} | {help}").into()
+        let horizontal = t!("footer.scroll_horizontal", locale = locale);
+        let wrap = t!("footer.wrap_off", locale = locale);
+        format!("{focus} · {scroll} · {horizontal} · {copy} · {wrap}").into()
+    }
 }
 
-fn draw_footer(frame: &mut Frame<'_>, area: Rect, theme: &Theme, help: &str) {
+fn draw_footer(frame: &mut Frame<'_>, area: Rect, theme: &Theme, help: Line<'_>) {
     frame.render_widget(
         Paragraph::new(help)
-            .style(Style::new().fg(theme.text).bg(theme.raised))
+            .style(Style::new().fg(Color::Rgb(153, 153, 153)).bg(theme.surface))
             .wrap(Wrap { trim: true }),
         area,
     );
@@ -800,7 +825,7 @@ mod tests {
                 highlights: None,
             }),
         };
-        let mut terminal = Terminal::new(TestBackend::new(100, 9)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(100, 8)).unwrap();
         app.handle_key(KeyCode::Tab);
         for _ in 0..8 {
             app.handle_key(KeyCode::Down);
@@ -849,17 +874,26 @@ mod tests {
                 .unwrap();
             terminal.backend().to_string()
         };
-        assert!(render(&mut app).contains("Wrap off"));
+        assert!(browser_help(&app).starts_with("Tab Preview"));
+        let tree = render(&mut app);
+        assert!(tree.contains("Enter Open"));
+        assert!(!tree.contains("Copy file"));
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Down);
-        assert!(render(&mut app).contains("2 │ 界  e\u{301}"));
+        assert!(browser_help(&app).starts_with("Tab Tree"));
+        let preview = render(&mut app);
+        assert!(preview.contains("2 │ 界  e\u{301}"));
+        assert!(preview.contains("Copy file"));
+        assert!(preview.contains("←→"));
+        assert!(!preview.contains("Enter Open"));
         app.handle_key(KeyCode::Right);
         assert!(render(&mut app).contains("2 │    e\u{301}"));
         app.handle_key(KeyCode::Right);
         assert!(render(&mut app).contains("2 │   e\u{301}"));
         app.handle_key(KeyCode::Char('w'));
         let wrapped = render(&mut app);
-        assert!(wrapped.contains("Wrap on"));
+        assert!(wrapped.contains("Unwrap lines"));
+        assert!(!wrapped.contains("←→"));
         assert!(wrapped.contains("2 │ 界  e\u{301}"));
         assert!(wrapped.contains("  │ xxx"));
         assert!(wrapped.contains("3 │ third"));
@@ -867,9 +901,9 @@ mod tests {
         assert!(render(&mut app).contains("2 │   e\u{301}"));
 
         app.language = "pt-BR";
-        assert!(render(&mut app).contains("Quebra desligada"));
+        assert!(render(&mut app).contains("Quebrar linhas"));
         app.handle_key(KeyCode::Char('w'));
-        assert!(render(&mut app).contains("Quebra ligada"));
+        assert!(render(&mut app).contains("Desativar quebra"));
     }
 
     #[test]
@@ -1073,7 +1107,7 @@ mod tests {
             assert!(!rendered.contains("Focus:") && !rendered.contains("Foco:"));
             assert!(rendered.contains("ação.txt"));
             assert!(rendered.contains(quit));
-            assert!(rendered.contains("tab "));
+            assert!(rendered.contains("Tab "));
 
             app.handle_key(crossterm::event::KeyCode::Char('o'));
             terminal
