@@ -789,7 +789,7 @@ mod tests {
 
         for (steps, label, background) in [
             (3, "> One Dark", Color::Rgb(40, 44, 52)),
-            (30, "> Filens Mono", Color::Rgb(0, 0, 0)),
+            (30, "> Filens Mono", Color::Rgb(36, 36, 36)),
         ] {
             let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
             let mut app = app_with_entry(Language::English, "example.txt");
