@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab Δέντρο"
 "footer.options_menu" = "↑↓ Πλοήγηση · Enter Άνοιγμα · Esc Κλείσιμο"
 "footer.options" = "↑↓ Πλοήγηση · Enter Εφαρμογή · Esc Επιστροφή"
-"footer.file_copied" = "Το αρχείο αντιγράφηκε"
+"footer.file_copied" = "Αντιγράφηκαν %{count} χαρακτήρες από %{lines} γραμμές"
 "footer.copied" = "Αντιγράφηκαν %{count} χαρακτήρες"
 "cli.usage" = "Χρήση: filens <κατάλογος>"
 "error.read_directory" = "Αδυναμία ανάγνωσης του καταλόγου %{path}: %{cause}"

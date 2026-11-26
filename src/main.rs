@@ -33,6 +33,7 @@ fn main() -> ExitCode {
 }
 
 fn open_directory() -> Result<(), String> {
+    preview::prepare();
     let path = parse_args(env::args_os().skip(1))?;
     let config_path = config::path();
     let preferences = config_path.as_deref().map(config::load).unwrap_or_default();

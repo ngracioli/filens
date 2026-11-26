@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab Дерево"
 "footer.options_menu" = "↑↓ Навигация · Enter Открыть · Esc Закрыть"
 "footer.options" = "↑↓ Навигация · Enter Применить · Esc Назад"
-"footer.file_copied" = "Файл скопирован"
+"footer.file_copied" = "Скопировано %{count} символов из %{lines} строк"
 "footer.copied" = "Скопировано символов: %{count}"
 "cli.usage" = "Использование: filens <каталог>"
 "error.read_directory" = "Не удалось прочитать каталог %{path}: %{cause}"

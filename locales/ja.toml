@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab ツリー"
 "footer.options_menu" = "↑↓ 移動 · Enter 開く · Esc 閉じる"
 "footer.options" = "↑↓ 移動 · Enter 適用 · Esc 戻る"
-"footer.file_copied" = "ファイルをコピーしました"
+"footer.file_copied" = "%{lines} 行から %{count} 文字をコピーしました"
 "footer.copied" = "%{count} 文字をコピーしました"
 "cli.usage" = "使い方: filens <ディレクトリ>"
 "error.read_directory" = "ディレクトリ %{path} を読み込めませんでした: %{cause}"

@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab Árbol"
 "footer.options_menu" = "↑↓ Navegar · Enter Abrir · Esc Cerrar"
 "footer.options" = "↑↓ Navegar · Enter Aplicar · Esc Volver"
-"footer.file_copied" = "Archivo copiado"
+"footer.file_copied" = "%{count} caracteres copiados en %{lines} líneas"
 "footer.copied" = "%{count} caracteres copiados"
 "cli.usage" = "Uso: filens <directorio>"
 "error.read_directory" = "No se pudo leer el directorio %{path}: %{cause}"

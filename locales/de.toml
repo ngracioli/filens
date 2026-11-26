@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab Baum"
 "footer.options_menu" = "↑↓ Navigieren · Enter Öffnen · Esc Schließen"
 "footer.options" = "↑↓ Navigieren · Enter Anwenden · Esc Zurück"
-"footer.file_copied" = "Datei kopiert"
+"footer.file_copied" = "%{count} Zeichen aus %{lines} Zeilen kopiert"
 "footer.copied" = "%{count} Zeichen kopiert"
 "cli.usage" = "Aufruf: filens <Verzeichnis>"
 "error.read_directory" = "Verzeichnis %{path} konnte nicht gelesen werden: %{cause}"

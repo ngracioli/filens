@@ -299,11 +299,16 @@ pub(super) fn draw_copy_footer(
     area: Rect,
     app: &App,
     count: usize,
-    whole_file: bool,
+    lines: usize,
 ) {
     let locale = app.language;
-    let copied = if whole_file {
-        t!("footer.file_copied", locale = locale)
+    let copied = if lines > 0 {
+        t!(
+            "footer.file_copied",
+            locale = locale,
+            count = count,
+            lines = lines
+        )
     } else {
         t!("footer.copied", locale = locale, count = count)
     };

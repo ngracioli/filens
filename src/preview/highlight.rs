@@ -19,6 +19,10 @@ pub(crate) enum Token {
 
 pub(crate) type Highlights = Vec<Vec<(Range<usize>, Token)>>;
 
+pub(crate) fn prepare() {
+    LazyLock::force(&SYNTAXES);
+}
+
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(|| {
     let mut builder = SyntaxSet::load_defaults_newlines().into_builder();
     for source in [

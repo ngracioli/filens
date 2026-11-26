@@ -1,6 +1,7 @@
 mod highlight;
 
 pub(crate) use highlight::Token;
+pub(crate) use highlight::prepare;
 
 use std::{
     fs::{self, File},

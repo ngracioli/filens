@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab Arborescence"
 "footer.options_menu" = "↑↓ Naviguer · Enter Ouvrir · Esc Fermer"
 "footer.options" = "↑↓ Naviguer · Enter Appliquer · Esc Retour"
-"footer.file_copied" = "Fichier copié"
+"footer.file_copied" = "%{count} caractères copiés sur %{lines} lignes"
 "footer.copied" = "%{count} caractères copiés"
 "cli.usage" = "Utilisation : filens <répertoire>"
 "error.read_directory" = "Impossible de lire le répertoire %{path} : %{cause}"

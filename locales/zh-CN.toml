@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab 文件树"
 "footer.options_menu" = "↑↓ 移动 · Enter 打开 · Esc 关闭"
 "footer.options" = "↑↓ 移动 · Enter 应用 · Esc 返回"
-"footer.file_copied" = "文件已复制"
+"footer.file_copied" = "已从 %{lines} 行复制 %{count} 个字符"
 "footer.copied" = "已复制 %{count} 个字符"
 "cli.usage" = "用法：filens <目录>"
 "error.read_directory" = "无法读取目录 %{path}：%{cause}"

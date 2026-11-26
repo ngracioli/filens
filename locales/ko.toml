@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab 트리"
 "footer.options_menu" = "↑↓ 이동 · Enter 열기 · Esc 닫기"
 "footer.options" = "↑↓ 이동 · Enter 적용 · Esc 뒤로"
-"footer.file_copied" = "파일을 복사했습니다"
+"footer.file_copied" = "%{lines}줄에서 %{count}자를 복사했습니다"
 "footer.copied" = "%{count}자를 복사했습니다"
 "cli.usage" = "사용법: filens <디렉터리>"
 "error.read_directory" = "디렉터리 %{path}을(를) 읽을 수 없습니다: %{cause}"

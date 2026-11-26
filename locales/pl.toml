@@ -14,7 +14,7 @@
 "footer.focus_tree" = "Tab Drzewo"
 "footer.options_menu" = "↑↓ Nawiguj · Enter Otwórz · Esc Zamknij"
 "footer.options" = "↑↓ Nawiguj · Enter Zastosuj · Esc Wróć"
-"footer.file_copied" = "Plik skopiowany"
+"footer.file_copied" = "Skopiowano %{count} znaków z %{lines} wierszy"
 "footer.copied" = "Skopiowano znaków: %{count}"
 "cli.usage" = "Użycie: filens <katalog>"
 "error.read_directory" = "Nie można odczytać katalogu %{path}: %{cause}"

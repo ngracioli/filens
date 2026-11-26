@@ -58,7 +58,7 @@ fn run_session(
     let mut scroll_pointer = None;
     let mut dragging = None;
     let mut copy = None;
-    let mut copied: Option<(usize, usize)> = None;
+    let mut copied: Option<(usize, usize, usize)> = None;
     let mut last_tree_click: Option<(usize, Instant)> = None;
     loop {
         let mut preview = Rect::default();
@@ -104,14 +104,14 @@ fn run_session(
                         }
                     }
                 }
-                if let Some((index, count)) = copied
+                if let Some((index, count, lines)) = copied
                     && match index {
                         0 => tree_selection.is_some(),
                         COPY_FILE => true,
                         _ => preview_selection.is_some(),
                     }
                 {
-                    ui::draw_copy_footer(frame, footer, app, count, index == COPY_FILE);
+                    ui::draw_copy_footer(frame, footer, app, count, lines);
                 }
             }
             if let Some(error) = &copy_error {
@@ -125,9 +125,10 @@ fn run_session(
             && (!clipboard.is_empty() || (index == COPY_FILE && copy_error.is_none()))
         {
             let count = clipboard.chars().count();
+            let lines = clipboard.lines().count();
             match execute!(io::stdout(), CopyToClipboard::to_clipboard_from(clipboard)) {
                 Ok(()) => {
-                    copied = Some((index, count));
+                    copied = Some((index, count, lines));
                     continue;
                 }
                 Err(error) if error.kind() == io::ErrorKind::Unsupported => {}
@@ -136,7 +137,7 @@ fn run_session(
         }
 
         let previous = (app.language, app.theme);
-        if copied.is_some_and(|(index, _)| index == COPY_FILE) {
+        if copied.is_some_and(|(index, _, _)| index == COPY_FILE) {
             copied = None;
             if !event::poll(Duration::from_millis(1200))? {
                 continue;
