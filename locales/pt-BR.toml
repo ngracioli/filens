@@ -6,6 +6,7 @@
 "options.english" = "Inglês"
 "options.portuguese" = "Português do Brasil"
 "footer.browser" = "tab Alternar foco | ↑↓ Mover | Enter Abrir | o Opções | q Sair"
+"footer.copied" = "[%{count} caracteres copiados para a área de transferência]"
 "footer.options" = "↑↓ Selecionar | Enter Aplicar | Esc Voltar | q Sair"
 "cli.usage" = "Uso: filens [--lang <en|pt-BR>] <diretório>"
 "error.unsupported_language" = "Idioma não suportado: %{language}"

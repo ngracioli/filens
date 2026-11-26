@@ -41,6 +41,7 @@ pub(crate) struct App {
     pub(crate) entries: Vec<Entry>,
     pub(crate) tree_selection: ListState,
     pub(crate) preview: Preview,
+    pub(crate) preview_offset: usize,
     pub(crate) language: Language,
     pub(crate) tree_focused: bool,
     pub(crate) language_selection: Option<Language>,
@@ -54,6 +55,7 @@ impl App {
             entries,
             tree_selection: ListState::default().with_selected(selected),
             preview: Preview::Empty,
+            preview_offset: 0,
             language,
             tree_focused: true,
             language_selection: None,
@@ -85,8 +87,18 @@ impl App {
                     }
                 }
                 KeyCode::Enter if self.tree_focused => self.activate_selection(),
+                KeyCode::Up => self.scroll_preview(-1),
+                KeyCode::Down => self.scroll_preview(1),
                 _ => {}
             }
+        }
+    }
+
+    pub(crate) fn scroll_preview(&mut self, delta: isize) {
+        if self.language_selection.is_none()
+            && matches!(self.preview, Preview::File { result: Ok(_), .. })
+        {
+            self.preview_offset = self.preview_offset.saturating_add_signed(delta);
         }
     }
 
@@ -96,6 +108,7 @@ impl App {
         };
         let entry = &mut self.entries[index];
         if !entry.kind.is_dir() {
+            self.preview_offset = 0;
             self.preview = Preview::File {
                 path: entry.path.clone(),
                 result: preview::open(&entry.path),

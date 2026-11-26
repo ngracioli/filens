@@ -6,6 +6,7 @@
 "options.english" = "English"
 "options.portuguese" = "Brazilian Portuguese"
 "footer.browser" = "tab Switch focus | ↑↓ Move | Enter Open | o Options | q Quit"
+"footer.copied" = "[%{count} characters copied to clipboard]"
 "footer.options" = "↑↓ Select | Enter Apply | Esc Back | q Quit"
 "cli.usage" = "Usage: filens [--lang <en|pt-BR>] <directory>"
 "error.unsupported_language" = "Unsupported language: %{language}"

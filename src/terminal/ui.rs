@@ -20,11 +20,20 @@ const MUTED: Color = Color::Rgb(168, 185, 207);
 const ACCENT: Color = Color::Rgb(125, 224, 201);
 const DIRECTORY: Color = Color::Rgb(242, 193, 132);
 
-pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
+pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) -> (Rect, [(Rect, u16); 2], Rect) {
     let locale = app.language.locale();
+    let browser_help = t!("footer.browser", locale = locale);
+    let count_help = t!("footer.copied", locale = locale, count = 999999);
     let footer_height = match frame.area().width {
         0..=39 => 3,
         40..=79 => 2,
+        width
+            if app.language_selection.is_none()
+                && usize::from(width)
+                    < Span::raw(format!("{browser_help} {count_help}")).width() =>
+        {
+            2
+        }
         _ => 1,
     };
     let [body, footer] = Layout::vertical([Constraint::Min(0), Constraint::Length(footer_height)])
@@ -50,6 +59,9 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
         Line::styled(format!("{indent}{marker}{name}"), style)
     });
     let tree_focused = app.tree_focused && !options_open;
+    let tree_panel = panel(&tree_title, tree_focused, RAISED)
+        .title_bottom(display_path(&app.root.to_string_lossy()));
+    let tree_text = tree_panel.inner(tree);
     let selection_style = if tree_focused {
         active_style()
     } else {
@@ -57,10 +69,7 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
     };
     frame.render_stateful_widget(
         List::new(tree_rows)
-            .block(
-                panel(&tree_title, tree_focused, RAISED)
-                    .title_bottom(display_path(&app.root.to_string_lossy())),
-            )
+            .block(tree_panel)
             .highlight_style(selection_style),
         tree,
         &mut app.tree_selection,
@@ -69,6 +78,7 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
         .padding(Padding::new(1, 1, 1, 0));
     let inner = preview_panel.inner(preview);
     frame.render_widget(preview_panel, preview);
+    let mut preview_text = (Rect::default(), 0);
     match &app.preview {
         Preview::Empty => draw_message(frame, inner, &t!("preview.empty", locale = locale)),
         Preview::DirectoryError { path, cause } => draw_message(
@@ -89,7 +99,16 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
                 path_row,
             );
             match result {
-                Ok(document) => draw_document(frame, content, document, locale),
+                Ok(document) => {
+                    let visible_lines =
+                        usize::from(content.height).saturating_sub(usize::from(document.truncated));
+                    let line_count = document.text.lines().count();
+                    app.preview_offset = app
+                        .preview_offset
+                        .min(line_count.saturating_sub(visible_lines.max(1)));
+                    preview_text =
+                        draw_document(frame, content, document, locale, app.preview_offset);
+                }
                 Err(error) => {
                     let message = match error {
                         preview::Error::Read(cause) => {
@@ -138,13 +157,49 @@ pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) {
         );
         t!("footer.options", locale = locale)
     } else {
-        t!("footer.browser", locale = locale)
+        browser_help
     };
+    draw_footer(frame, footer, &help);
+    let tree_rows = tree_text.height.min(
+        app.entries
+            .len()
+            .saturating_sub(app.tree_selection.offset())
+            .try_into()
+            .unwrap_or(u16::MAX),
+    );
+    (
+        preview,
+        [(tree_text, tree_text.y + tree_rows), preview_text],
+        footer,
+    )
+}
+
+pub(super) fn draw_copy_footer(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    language: Language,
+    count: usize,
+) {
+    let locale = language.locale();
+    let help = t!("footer.browser", locale = locale);
+    let copied = t!("footer.copied", locale = locale, count = count);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(format!("{help} ")),
+            Span::styled(copied, Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)),
+        ]))
+        .style(Style::new().fg(TEXT).bg(RAISED))
+        .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn draw_footer(frame: &mut Frame<'_>, area: Rect, help: &str) {
     frame.render_widget(
         Paragraph::new(help)
             .style(Style::new().fg(TEXT).bg(RAISED))
             .wrap(Wrap { trim: true }),
-        footer,
+        area,
     );
 }
 
@@ -157,7 +212,13 @@ fn draw_message(frame: &mut Frame<'_>, area: Rect, message: &str) {
     );
 }
 
-fn draw_document(frame: &mut Frame<'_>, area: Rect, document: &preview::Document, locale: &str) {
+fn draw_document(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    document: &preview::Document,
+    locale: &str,
+    offset: usize,
+) -> (Rect, u16) {
     let mut rows = Vec::new();
     if document.truncated {
         rows.push(Line::styled(
@@ -166,13 +227,16 @@ fn draw_document(frame: &mut Frame<'_>, area: Rect, document: &preview::Document
         ));
     }
     let visible_lines = usize::from(area.height).saturating_sub(rows.len());
-    let number_width = visible_lines.to_string().len();
+    let number_width = (offset + visible_lines).to_string().len();
+    let gutter = (number_width as u16 + 3).min(area.width);
+    let text_y = area.y.saturating_add(rows.len() as u16);
     rows.extend(
         document
             .text
             .lines()
-            .take(visible_lines)
             .enumerate()
+            .skip(offset)
+            .take(visible_lines)
             .map(|(index, text)| {
                 Line::from(vec![
                     Span::styled(
@@ -183,7 +247,17 @@ fn draw_document(frame: &mut Frame<'_>, area: Rect, document: &preview::Document
                 ])
             }),
     );
+    let text_height = rows.len().saturating_sub(usize::from(document.truncated)) as u16;
     frame.render_widget(Paragraph::new(rows).style(Style::new().fg(TEXT)), area);
+    (
+        Rect::new(
+            area.x + gutter,
+            text_y,
+            area.width - gutter,
+            visible_lines as u16,
+        ),
+        text_y + text_height,
+    )
 }
 
 fn display_path(text: &str) -> String {
@@ -262,7 +336,11 @@ mod tests {
         assert!(matches!(app.preview, Preview::Empty));
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Enter);
-        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        terminal
+            .draw(|frame| {
+                draw(frame, &mut app);
+            })
+            .unwrap();
         assert!(matches!(&app.preview, Preview::File { path, result: Ok(_) } if path == &file));
         assert!(
             terminal
@@ -273,7 +351,11 @@ mod tests {
 
         app.handle_key(KeyCode::Up);
         app.handle_key(KeyCode::Enter);
-        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        terminal
+            .draw(|frame| {
+                draw(frame, &mut app);
+            })
+            .unwrap();
         let rendered = terminal.backend().to_string();
         assert_eq!(rendered.matches("child.txt").count(), 1);
         assert_eq!(app.entries.len(), 1);
@@ -316,7 +398,11 @@ mod tests {
         .enumerate()
         {
             app.handle_key(KeyCode::Enter);
-            terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
             let rendered = terminal.backend().to_string();
             assert!(rendered.contains(expected), "{rendered}");
             assert!(app.tree_focused);
@@ -335,11 +421,51 @@ mod tests {
     }
 
     #[test]
+    fn preview_arrows_scroll_numbered_lines_and_stop_at_the_end() {
+        use crossterm::event::KeyCode;
+
+        let mut app = app_with_entry(Language::English, "example.txt");
+        app.preview = Preview::File {
+            path: "example.txt".into(),
+            result: Ok(preview::Document {
+                text: "first\nsecond\nthird\nfourth\nlast".into(),
+                truncated: false,
+            }),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(100, 8)).unwrap();
+        app.handle_key(KeyCode::Tab);
+        for _ in 0..8 {
+            app.handle_key(KeyCode::Down);
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
+        }
+        let rendered = terminal.backend().to_string();
+        assert!(rendered.contains("3 │ third"));
+        assert!(rendered.contains("5 │ last"));
+        assert!(!rendered.contains("2 │ second"));
+
+        app.handle_key(KeyCode::Up);
+        terminal
+            .draw(|frame| {
+                draw(frame, &mut app);
+            })
+            .unwrap();
+        assert!(terminal.backend().to_string().contains("2 │ second"));
+    }
+
+    #[test]
     fn options_overlay_keeps_the_browser_visible() {
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         let mut app = app_with_entry(Language::English, "example.txt");
         app.handle_key(crossterm::event::KeyCode::Char('o'));
-        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        terminal
+            .draw(|frame| {
+                draw(frame, &mut app);
+            })
+            .unwrap();
 
         let buffer = terminal.backend().buffer();
         assert_eq!(buffer[(23, 7)].symbol(), "┌");
@@ -367,7 +493,11 @@ mod tests {
         ] {
             let mut terminal = Terminal::new(TestBackend::new(32, 8)).unwrap();
             let mut app = app_with_entry(language, "ação.txt");
-            terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
             let rendered = terminal.backend().to_string();
             assert_eq!(terminal.backend().buffer()[(2, 0)].bg, ACCENT);
             assert!(!rendered.contains("Focus:") && !rendered.contains("Foco:"));
@@ -376,7 +506,11 @@ mod tests {
             assert!(rendered.contains("tab "));
 
             app.handle_key(crossterm::event::KeyCode::Char('o'));
-            terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+            terminal
+                .draw(|frame| {
+                    draw(frame, &mut app);
+                })
+                .unwrap();
             let rendered = terminal.backend().to_string();
             assert!(rendered.contains(options));
             assert!(rendered.contains("Esc"));
