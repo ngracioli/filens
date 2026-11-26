@@ -11,6 +11,7 @@
 "footer.options" = "Esc Назад | ↑↓ | Enter / щелчок — применить"
 "cli.usage" = "Использование: filens <каталог>"
 "error.read_directory" = "Не удалось прочитать каталог %{path}: %{cause}"
+"error.save_config" = "Не удалось сохранить настройки: %{cause}"
 "error.terminal" = "Ошибка терминала: %{cause}"
 "preview.read_error" = "Не удалось прочитать файл: %{cause}"
 "preview.not_regular" = "Просмотр доступен только для обычных файлов."

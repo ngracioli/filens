@@ -2,6 +2,7 @@ mod ui;
 
 use std::{
     io,
+    path::Path,
     time::{Duration, Instant},
 };
 
@@ -21,11 +22,14 @@ use ratatui::{
     text::Span,
 };
 
-use crate::app::App;
+use crate::{
+    app::App,
+    config::{self, Preferences},
+};
 
 const DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 
-pub(crate) fn run(app: &mut App) -> io::Result<()> {
+pub(crate) fn run(app: &mut App, config_path: Option<&Path>) -> io::Result<()> {
     let result = ratatui::try_init().and_then(|mut terminal| {
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
@@ -33,7 +37,7 @@ pub(crate) fn run(app: &mut App) -> io::Result<()> {
             hook(info);
         }));
         let result = execute!(io::stdout(), EnableMouseCapture)
-            .and_then(|()| run_session(&mut terminal, app));
+            .and_then(|()| run_session(&mut terminal, app, config_path));
         let mouse_restored = execute!(io::stdout(), DisableMouseCapture);
         result.and(mouse_restored)
     });
@@ -41,7 +45,12 @@ pub(crate) fn run(app: &mut App) -> io::Result<()> {
     result.and(restored)
 }
 
-fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
+fn run_session(
+    terminal: &mut DefaultTerminal,
+    app: &mut App,
+    config_path: Option<&Path>,
+) -> io::Result<()> {
+    let mut save_error = None;
     let mut tree_selection = None;
     let mut preview_selection: Option<(PreviewPoint, PreviewPoint)> = None;
     let mut scroll_pointer = None;
@@ -91,6 +100,9 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
                     ui::draw_copy_footer(frame, footer, app, count);
                 }
             }
+            if let Some(error) = &save_error {
+                ui::draw_save_error(frame, footer, app, error);
+            }
         })?;
         if let Some(index) = copy.take()
             && !clipboard.is_empty()
@@ -106,7 +118,10 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
             }
         }
 
-        match event::read()? {
+        let previous = (app.language, app.theme);
+        let event = event::read()?;
+        save_error = None;
+        match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 last_tree_click = None;
                 if key.code == KeyCode::Char('q') {
@@ -274,6 +289,18 @@ fn run_session(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> 
                 dragging = None;
             }
             _ => {}
+        }
+        if previous != (app.language, app.theme)
+            && let Some(path) = config_path
+        {
+            save_error = config::save(
+                path,
+                Preferences {
+                    language: app.language,
+                    theme: app.theme,
+                },
+            )
+            .err();
         }
     }
 }

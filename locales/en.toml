@@ -11,6 +11,7 @@
 "footer.options" = "Esc Back | ↑↓ | Enter / Click Apply"
 "cli.usage" = "Usage: filens <directory>"
 "error.read_directory" = "Could not read directory %{path}: %{cause}"
+"error.save_config" = "Could not save preferences: %{cause}"
 "error.terminal" = "Terminal error: %{cause}"
 "preview.read_error" = "Could not read file: %{cause}"
 "preview.not_regular" = "Only regular files can be previewed."

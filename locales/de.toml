@@ -11,6 +11,7 @@
 "footer.options" = "Esc Zurück | ↑↓ | Enter / Klick zum Übernehmen"
 "cli.usage" = "Aufruf: filens <Verzeichnis>"
 "error.read_directory" = "Verzeichnis %{path} konnte nicht gelesen werden: %{cause}"
+"error.save_config" = "Einstellungen konnten nicht gespeichert werden: %{cause}"
 "error.terminal" = "Terminalfehler: %{cause}"
 "preview.read_error" = "Datei konnte nicht gelesen werden: %{cause}"
 "preview.not_regular" = "Nur reguläre Dateien können angezeigt werden."

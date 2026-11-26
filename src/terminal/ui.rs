@@ -261,6 +261,17 @@ pub(super) fn draw(
     )
 }
 
+pub(super) fn draw_save_error(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    app: &App,
+    error: &std::io::Error,
+) {
+    let message = t!("error.save_config", locale = app.language, cause = error);
+    frame.render_widget(Clear, area);
+    draw_footer(frame, area, &THEMES[app.theme], &message);
+}
+
 pub(super) fn draw_copy_footer(frame: &mut Frame<'_>, area: Rect, app: &App, count: usize) {
     let theme = &THEMES[app.theme];
     let locale = app.language;

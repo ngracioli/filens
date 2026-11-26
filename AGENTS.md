@@ -17,7 +17,7 @@ Filens is a terminal application for browsing directories and previewing files.
 
 - Localize all Filens-owned interface, help, and error text with `rust-i18n` and embedded `locales/*.toml` catalogs. English (`en`) is the default, fallback, and source for translations.
 - Look up messages with the active locale from application state and stable English keys. Store complete messages in the catalogs and use named placeholders for runtime values. Preserve paths, file contents, and key bindings.
-- Add a language by creating `locales/<locale>.toml` with `locale.name` set to its name in that language. The language submenu discovers embedded catalogs automatically. Change the language inside Options for the current session.
+- Add a language by creating `locales/<locale>.toml` with `locale.name` set to its name in that language. The language submenu discovers embedded catalogs automatically. Change the language inside Options. Confirmed language and theme choices are stored per user in `filens/config.toml` under the platform configuration directory.
 - Add new message keys to `en.toml` first and update translations across the catalog set. Run `python3 scripts/check_locales.py` with Python 3.11+ to list missing keys and verify placeholders. Review generated translations and check Unicode rendering and key hints at narrow terminal sizes.
 
 ## Development workflow

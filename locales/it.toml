@@ -11,6 +11,7 @@
 "footer.options" = "Esc Indietro | ↑↓ | Enter / Clic per applicare"
 "cli.usage" = "Uso: filens <directory>"
 "error.read_directory" = "Impossibile leggere la directory %{path}: %{cause}"
+"error.save_config" = "Impossibile salvare le preferenze: %{cause}"
 "error.terminal" = "Errore del terminale: %{cause}"
 "preview.read_error" = "Impossibile leggere il file: %{cause}"
 "preview.not_regular" = "L’anteprima è disponibile solo per i file regolari."

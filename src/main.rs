@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod preview;
 mod terminal;
 mod theme;
@@ -33,7 +34,9 @@ fn main() -> ExitCode {
 
 fn open_directory() -> Result<(), String> {
     let path = parse_args(env::args_os().skip(1))?;
-    let language = "en";
+    let config_path = config::path();
+    let preferences = config_path.as_deref().map(config::load).unwrap_or_default();
+    let language = preferences.language;
     let entries = tree::read_directory(&path, 0).map_err(|error| {
         t!(
             "error.read_directory",
@@ -45,7 +48,8 @@ fn open_directory() -> Result<(), String> {
     })?;
 
     let mut app = App::new(language, path, entries);
-    terminal::run(&mut app)
+    app.theme = preferences.theme;
+    terminal::run(&mut app, config_path.as_deref())
         .map_err(|error| t!("error.terminal", locale = app.language, cause = error).into_owned())
 }
 

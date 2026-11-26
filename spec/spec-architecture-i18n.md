@@ -8,7 +8,7 @@ tags: [architecture, i18n]
 
 ## Scope and Language Selection
 
-Launch in English (`en`). Press `o` to open Options, then open Language. Use `↑↓` to select and `Enter` to apply a language, or click its name. The choice applies to the current session. Use `Esc` to return to Options and again to restore focus to the previous panel.
+Launch with the saved language, or English (`en`) by default. Press `o` to open Options, then open Language. Use `↑↓` to select and `Enter` to apply a language, or click its name. Save the confirmed choice to the per-user configuration. Use `Esc` to return to Options and again to restore focus to the previous panel.
 
 ## Implementation
 
@@ -26,4 +26,4 @@ Use `rust-i18n` to embed every catalog in `locales/` at compile time. List the e
 - Check catalog key and placeholder parity. Exercise missing-translation fallback separately with a test fixture.
 - Test opening Options, changing language, and restoring the previous panel focus.
 - Render the available languages with Ratatui's `TestBackend`. Verify that headings and footer text fit at supported terminal widths and that the focus indicator remains visible.
-- Exercise startup errors in English and preview errors in the active language. Check that file names, paths, file content, and shortcuts are preserved.
+- Exercise startup and preview errors in the active language. Check that file names, paths, file content, and shortcuts are preserved.

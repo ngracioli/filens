@@ -11,6 +11,7 @@
 "footer.options" = "Esc 返回 | ↑↓ | Enter 或点击应用"
 "cli.usage" = "用法：filens <目录>"
 "error.read_directory" = "无法读取目录 %{path}：%{cause}"
+"error.save_config" = "无法保存首选项：%{cause}"
 "error.terminal" = "终端错误：%{cause}"
 "preview.read_error" = "无法读取文件：%{cause}"
 "preview.not_regular" = "只能预览常规文件。"

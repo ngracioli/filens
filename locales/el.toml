@@ -11,6 +11,7 @@
 "footer.options" = "Esc Πίσω | ↑↓ | Enter / Κλικ για εφαρμογή"
 "cli.usage" = "Χρήση: filens <κατάλογος>"
 "error.read_directory" = "Αδυναμία ανάγνωσης του καταλόγου %{path}: %{cause}"
+"error.save_config" = "Αδυναμία αποθήκευσης προτιμήσεων: %{cause}"
 "error.terminal" = "Σφάλμα τερματικού: %{cause}"
 "preview.read_error" = "Αδυναμία ανάγνωσης του αρχείου: %{cause}"
 "preview.not_regular" = "Η προεπισκόπηση είναι διαθέσιμη μόνο για κανονικά αρχεία."

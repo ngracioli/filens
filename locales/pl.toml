@@ -11,6 +11,7 @@
 "footer.options" = "Esc Wstecz | ↑↓ | Enter / Kliknij, by zastosować"
 "cli.usage" = "Użycie: filens <katalog>"
 "error.read_directory" = "Nie można odczytać katalogu %{path}: %{cause}"
+"error.save_config" = "Nie można zapisać ustawień: %{cause}"
 "error.terminal" = "Błąd terminala: %{cause}"
 "preview.read_error" = "Nie można odczytać pliku: %{cause}"
 "preview.not_regular" = "Podgląd jest dostępny tylko dla zwykłych plików."

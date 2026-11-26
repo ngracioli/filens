@@ -11,6 +11,7 @@
 "footer.options" = "Esc Voltar | ↑↓ | Enter / Clique Aplicar"
 "cli.usage" = "Uso: filens <diretório>"
 "error.read_directory" = "Não foi possível ler o diretório %{path}: %{cause}"
+"error.save_config" = "Não foi possível salvar as preferências: %{cause}"
 "error.terminal" = "Erro no terminal: %{cause}"
 "preview.read_error" = "Não foi possível ler o arquivo: %{cause}"
 "preview.not_regular" = "A prévia aceita apenas arquivos regulares."

@@ -11,6 +11,7 @@
 "footer.options" = "Esc 뒤로 | ↑↓ | Enter 또는 클릭으로 적용"
 "cli.usage" = "사용법: filens <디렉터리>"
 "error.read_directory" = "디렉터리 %{path}을(를) 읽을 수 없습니다: %{cause}"
+"error.save_config" = "환경설정을 저장할 수 없습니다: %{cause}"
 "error.terminal" = "터미널 오류: %{cause}"
 "preview.read_error" = "파일을 읽을 수 없습니다: %{cause}"
 "preview.not_regular" = "일반 파일만 미리 볼 수 있습니다."

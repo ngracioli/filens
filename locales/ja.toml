@@ -11,6 +11,7 @@
 "footer.options" = "Esc 戻る | ↑↓ | Enter またはクリックで適用"
 "cli.usage" = "使い方: filens <ディレクトリ>"
 "error.read_directory" = "ディレクトリ %{path} を読み込めませんでした: %{cause}"
+"error.save_config" = "設定を保存できませんでした: %{cause}"
 "error.terminal" = "端末エラー: %{cause}"
 "preview.read_error" = "ファイルを読み込めませんでした: %{cause}"
 "preview.not_regular" = "通常のファイルのみプレビューできます。"
