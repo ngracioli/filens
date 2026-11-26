@@ -17,3 +17,5 @@
 "preview.binary" = "Arquivo binário."
 "preview.encoding" = "Codificação de texto não reconhecida."
 "preview.truncated" = "Prévia parcial (primeiro 1 MiB)."
+"footer.wrap_on" = "w Quebra ligada"
+"footer.wrap_off" = "w Quebra desligada · ←→ Rolar"

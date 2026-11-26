@@ -17,3 +17,5 @@
 "preview.binary" = "Binary file."
 "preview.encoding" = "Unrecognized text encoding."
 "preview.truncated" = "Partial preview (first 1 MiB)."
+"footer.wrap_on" = "w Wrap on"
+"footer.wrap_off" = "w Wrap off · ←→ Scroll"

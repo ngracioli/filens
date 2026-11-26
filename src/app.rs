@@ -42,6 +42,10 @@ pub(crate) struct App {
     pub(crate) tree_selection: ListState,
     pub(crate) preview: Preview,
     pub(crate) preview_offset: usize,
+    pub(crate) preview_last_offset: usize,
+    pub(crate) preview_column: usize,
+    pub(crate) preview_last_column: usize,
+    pub(crate) preview_wrap: bool,
     pub(crate) language: Language,
     pub(crate) tree_focused: bool,
     pub(crate) language_selection: Option<Language>,
@@ -56,6 +60,10 @@ impl App {
             tree_selection: ListState::default().with_selected(selected),
             preview: Preview::Empty,
             preview_offset: 0,
+            preview_last_offset: 0,
+            preview_column: 0,
+            preview_last_column: 0,
+            preview_wrap: false,
             language,
             tree_focused: true,
             language_selection: None,
@@ -74,6 +82,16 @@ impl App {
         } else {
             match key {
                 KeyCode::Tab => self.tree_focused = !self.tree_focused,
+                KeyCode::Char('w') => self.preview_wrap = !self.preview_wrap,
+                KeyCode::Left if !self.tree_focused && !self.preview_wrap => {
+                    self.preview_column = self.preview_column.saturating_sub(1);
+                }
+                KeyCode::Right if !self.tree_focused && !self.preview_wrap => {
+                    self.preview_column = self
+                        .preview_column
+                        .saturating_add(1)
+                        .min(self.preview_last_column.max(self.preview_column));
+                }
                 KeyCode::Char('o') => self.language_selection = Some(self.language),
                 KeyCode::Up if self.tree_focused => {
                     if let Some(index) = self.tree_selection.selected() {
@@ -98,7 +116,10 @@ impl App {
         if self.language_selection.is_none()
             && matches!(self.preview, Preview::File { result: Ok(_), .. })
         {
-            self.preview_offset = self.preview_offset.saturating_add_signed(delta);
+            self.preview_offset = self
+                .preview_offset
+                .saturating_add_signed(delta)
+                .min(self.preview_last_offset.max(self.preview_offset));
         }
     }
 
@@ -109,6 +130,7 @@ impl App {
         let entry = &mut self.entries[index];
         if !entry.kind.is_dir() {
             self.preview_offset = 0;
+            self.preview_column = 0;
             self.preview = Preview::File {
                 path: entry.path.clone(),
                 result: preview::open(&entry.path),
